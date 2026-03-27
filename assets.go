@@ -3,20 +3,16 @@
 
 package atlos
 
-import (
-	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
-)
-
 // AssetListResponse represents the response structure for asset list API
 type AssetListResponse struct {
-	Assets []internalclient.Asset
+	Assets []Asset
 }
 
 // AssetsFromAtlas contains the asset list fetched from Atlas API
-var AssetsFromAtlas = []internalclient.Asset{
+var AssetsFromAtlas = []Asset{
 	{
 		Amount: new(float32(100.022)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -72,7 +68,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.054)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -128,7 +124,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.035)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -166,7 +162,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.04)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("bsc"),
 				Name: new("Binance Smart Chain"),
@@ -186,7 +182,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.032)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -206,7 +202,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.022)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("pgn"),
 				Name: new("Polygon"),
@@ -226,7 +222,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.0981)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -246,7 +242,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(100.1884)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -266,7 +262,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(1708.5255)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("pgn"),
 				Name: new("Polygon"),
@@ -286,7 +282,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(0.050374)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("eth"),
 				Name: new("Ethereum"),
@@ -313,7 +309,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(0.164106)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("bsc"),
 				Name: new("Binance Smart Chain"),
@@ -332,7 +328,7 @@ var AssetsFromAtlas = []internalclient.Asset{
 	},
 	{
 		Amount: new(float32(1100.4731)),
-		Blockchains: &[]internalclient.Blockchain{
+		Blockchains: &[]Blockchain{
 			{
 				Code: new("pgn"),
 				Name: new("Polygon"),

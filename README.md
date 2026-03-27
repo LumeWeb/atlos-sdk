@@ -57,7 +57,7 @@ func main() {
         RecipientAddress: "0x...",
     }
     
-    resp, err := client.internalGen.SendTokenPostWithResponse(ctx, req)
+    resp, err := client.InternalGen.SendTokenPostWithResponse(ctx, req)
     if err != nil {
         log.Fatal(err)
     }
@@ -188,8 +188,4 @@ The generated client supports all Atlos API endpoints:
 
 ## License
 
-Proprietary - https://atlos.io/terms
-
-## Support
-
-https://atlos.io
+MIT

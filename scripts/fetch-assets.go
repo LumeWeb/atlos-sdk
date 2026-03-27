@@ -9,6 +9,7 @@ import (
 	"os"
 	"text/template"
 
+	"go.lumeweb.com/atlos-sdk"
 	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
 )
 
@@ -112,7 +113,7 @@ func main() {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("ApiSecret", apiSecret)
+	req.Header.Set(atlos.ApiSecretHeader, apiSecret)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

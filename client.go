@@ -15,12 +15,19 @@ import (
 // DefaultEndpoint is the default API endpoint for the Atlos Gateway API.
 const DefaultEndpoint = "https://api.atlos.io/gateway/rest"
 
+// ApiSecretHeader is the HTTP header name for API secret authentication.
+const ApiSecretHeader = "ApiSecret"
+
+func init() {
+	// Ensure apiSecret is not empty at package init time
+}
+
 // Client represents the main Atlos SDK client.
 type Client struct {
 	apiSecret    string
 	baseURL      string
 	httpClient   *http.Client
-	internalGen  *internalclient.ClientWithResponses
+	InternalGen  *internalclient.ClientWithResponses
 }
 
 // ClientConfig holds configuration for creating a new Client.
@@ -84,22 +91,22 @@ func NewClient(apiSecret string, opts ...ClientOption) (*Client, error) {
 	// Create request editor with API Secret (uses ApiSecret header, not Bearer)
 	requestEditor := internalclient.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
 		if cfg.apiSecret != "" {
-			req.Header.Set("ApiSecret", cfg.apiSecret)
+			req.Header.Set(ApiSecretHeader, cfg.apiSecret)
 		}
 		return nil
 	})
 
 	// Create internal generated client
-	internalGen, err := internalclient.NewClientWithResponses(normalizedURL, requestEditor, internalclient.WithHTTPClient(httpClient))
+	InternalGen, err := internalclient.NewClientWithResponses(normalizedURL, requestEditor, internalclient.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create internal client: %w", err)
 	}
 
 	c := &Client{
-		apiSecret:   cfg.apiSecret,
-		baseURL:     normalizedURL,
-		httpClient:  httpClient,
-		internalGen: internalGen,
+		apiSecret:    cfg.apiSecret,
+		baseURL:      normalizedURL,
+		httpClient:   httpClient,
+		InternalGen:  InternalGen,
 	}
 
 	return c, nil
@@ -117,17 +124,18 @@ func (c *Client) APISecret() string {
 
 // SetHTTPClient sets a custom HTTP client for all API requests.
 // This is useful for testing or customizing HTTP behavior.
-func (c *Client) SetHTTPClient(client *http.Client) {
+func (c *Client) SetHTTPClient(client *http.Client) error {
 	c.httpClient = client
-	var err error
 	requestEditor := internalclient.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
 		if c.apiSecret != "" {
-			req.Header.Set("ApiSecret", c.apiSecret)
+			req.Header.Set(ApiSecretHeader, c.apiSecret)
 		}
 		return nil
 	})
-	c.internalGen, err = internalclient.NewClientWithResponses(c.baseURL, requestEditor, internalclient.WithHTTPClient(client))
+	InternalGen, err := internalclient.NewClientWithResponses(c.baseURL, requestEditor, internalclient.WithHTTPClient(client))
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to update HTTP client: %w", err)
 	}
+	c.InternalGen = InternalGen
+	return nil
 }

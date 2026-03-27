@@ -28,8 +28,8 @@ func TestNewClient_Default(t *testing.T) {
 	if client.httpClient == nil {
 		t.Errorf("NewClient() should initialize httpClient")
 	}
-	if client.internalGen == nil {
-		t.Errorf("NewClient() should initialize internalGen")
+	if client.InternalGen == nil {
+		t.Errorf("NewClient() should initialize InternalGen")
 	}
 }
 
@@ -136,7 +136,10 @@ func TestClient_SetHTTPClient(t *testing.T) {
 	customClient := &http.Client{}
 	client, _ := NewClient("test-secret")
 
-	client.SetHTTPClient(customClient)
+	err := client.SetHTTPClient(customClient)
+	if err != nil {
+		t.Errorf("SetHTTPClient() should not error: %v", err)
+	}
 
 	if client.httpClient != customClient {
 		t.Errorf("SetHTTPClient() should set the custom client")
@@ -179,8 +182,8 @@ func TestClient_NilInitializers(t *testing.T) {
 	if client.httpClient == nil {
 		t.Errorf("NewClient() should initialize httpClient")
 	}
-	if client.internalGen == nil {
-		t.Errorf("NewClient() should initialize internalGen")
+	if client.InternalGen == nil {
+		t.Errorf("NewClient() should initialize InternalGen")
 	}
 }
 

@@ -12,6 +12,29 @@ import (
 	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
 )
 
+// Re-exported request and response types from internal/client package
+
+// Asset defines model for an asset.
+type Asset = internalclient.Asset
+
+// Blockchain defines model for a blockchain.
+type Blockchain = internalclient.Blockchain
+
+// InvoiceResponse defines model for invoice response.
+type InvoiceResponse = internalclient.InvoiceResponse
+
+// Payment defines model for a payment transaction.
+type Payment = internalclient.Payment
+
+// InvoiceCreatePostRequest defines model for invoice creation request.
+type InvoiceCreatePostRequest = internalclient.InvoiceCreatePostRequest
+
+// CreatePaymentPostRequest defines model for payment creation request.
+type CreatePaymentPostRequest = internalclient.CreatePaymentPostRequest
+
+// PaymentGetPostRequest defines model for getting payment request.
+type PaymentGetPostRequest = internalclient.PaymentGetPostRequest
+
 // DefaultEndpoint is the default API endpoint for the Atlos Gateway API.
 const DefaultEndpoint = "https://api.atlos.io/gateway/rest"
 

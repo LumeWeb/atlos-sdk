@@ -26,8 +26,8 @@ type Server struct {
 
 	// Test data storage
 	mu         sync.RWMutex
-	invoices   map[string]*internalclient.InvoiceResponse
-	payments   map[string]*internalclient.Payment
+	invoices   map[string]*InvoiceResponse
+	payments   map[string]*Payment
 	nextIDs    struct {
 		invoice  int
 		payment  int
@@ -118,8 +118,8 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 	return &Server{
 		config:   cfg,
 		sender:   sender,
-		invoices: make(map[string]*internalclient.InvoiceResponse),
-		payments: make(map[string]*internalclient.Payment),
+		invoices: make(map[string]*InvoiceResponse),
+		payments: make(map[string]*Payment),
 	}, nil
 }
 
@@ -138,7 +138,7 @@ func (s *Server) InvoiceCancelPost(w http.ResponseWriter, r *http.Request) {
 
 // InvoiceCreatePost handles /Invoice/Create requests and generates a new invoice.
 func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
-	var req internalclient.InvoiceCreatePostRequest
+	var req InvoiceCreatePostRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
@@ -150,7 +150,7 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 	s.nextIDs.invoice++
 	invoiceID := fmt.Sprintf("inv-%d", s.nextIDs.invoice)
 
-	invoice := &internalclient.InvoiceResponse{
+	invoice := &InvoiceResponse{
 		Id:          &invoiceID,
 		PaymentLink: func() *string { s := fmt.Sprintf("https://atlos.com/payment/%s", invoiceID); return &s }(),
 	}
@@ -163,7 +163,7 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 
 // CreatePaymentPost handles /Payment/Create requests and generates a wallet address.
 func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
-	var req internalclient.CreatePaymentPostRequest
+	var req CreatePaymentPostRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
@@ -177,7 +177,7 @@ func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
 
 	recipientAddr := fmt.Sprintf("0x%s", generateHexString(40))
 
-	payment := &internalclient.Payment{
+	payment := &Payment{
 		Id:               &paymentID,
 		Amount:           &zeroAmountStr,
 		AssetCode:        &req.AssetCode,
@@ -194,7 +194,7 @@ func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
 
 // PaymentGetPost handles /Payment/Get requests and returns payment status.
 func (s *Server) PaymentGetPost(w http.ResponseWriter, r *http.Request) {
-	var req internalclient.PaymentGetPostRequest
+	var req PaymentGetPostRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
@@ -321,7 +321,7 @@ func (s *Server) CompletePayment(paymentID string) error {
 }
 
 // GetInvoice retrieves a stored invoice by ID.
-func (s *Server) GetInvoice(invoiceID string) (*internalclient.InvoiceResponse, error) {
+func (s *Server) GetInvoice(invoiceID string) (*InvoiceResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -333,7 +333,7 @@ func (s *Server) GetInvoice(invoiceID string) (*internalclient.InvoiceResponse, 
 }
 
 // GetPayment retrieves a stored payment by ID.
-func (s *Server) GetPayment(paymentID string) (*internalclient.Payment, error) {
+func (s *Server) GetPayment(paymentID string) (*Payment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

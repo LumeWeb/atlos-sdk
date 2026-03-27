@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
 )
 
 func TestNewServer_ValidOptions(t *testing.T) {
@@ -123,7 +121,7 @@ func TestServer_InvoiceCreatePost_Valid(t *testing.T) {
 		t.Errorf("InvoiceCreatePost() should return 200 status, got %d", w.Code)
 	}
 
-	var response internalclient.InvoiceResponse
+	var response InvoiceResponse
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Errorf("InvoiceCreatePost() should return valid JSON: %v", err)
 	}
@@ -163,7 +161,7 @@ func TestServer_CreatePaymentPost_Valid(t *testing.T) {
 		t.Errorf("CreatePaymentPost() should return 200 status")
 	}
 
-	var response internalclient.Payment
+	var response Payment
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Errorf("CreatePaymentPost() should return valid JSON: %v", err)
 	}
@@ -198,7 +196,7 @@ func TestServer_PaymentGetPost_Existing(t *testing.T) {
 	createW := httptest.NewRecorder()
 	server.CreatePaymentPost(createW, createReq)
 
-	var createResp internalclient.Payment
+	var createResp Payment
 	json.NewDecoder(createW.Body).Decode(&createResp)
 
 	getBody := `{"PaymentId":"` + *createResp.Id + `"}`
@@ -211,7 +209,7 @@ func TestServer_PaymentGetPost_Existing(t *testing.T) {
 		t.Errorf("PaymentGetPost() should return 200 status for existing payment")
 	}
 
-	var response internalclient.Payment
+	var response Payment
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Errorf("PaymentGetPost() should return valid JSON: %v", err)
 	}
@@ -334,7 +332,7 @@ func TestServer_CompletePaymentPost_Valid(t *testing.T) {
 	createW := httptest.NewRecorder()
 	server.CreatePaymentPost(createW, createReq)
 
-	var createResp internalclient.Payment
+	var createResp Payment
 	json.NewDecoder(createW.Body).Decode(&createResp)
 
 	completeBody := `{"PaymentId":"` + *createResp.Id + `"}`
@@ -396,7 +394,7 @@ func TestServer_GetInvoice_Existing(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.InvoiceCreatePost(w, req)
 
-	var response internalclient.InvoiceResponse
+	var response InvoiceResponse
 	json.NewDecoder(w.Body).Decode(&response)
 
 	invoice, err := server.GetInvoice(*response.Id)
@@ -431,7 +429,7 @@ func TestServer_GetPayment_Existing(t *testing.T) {
 	createW := httptest.NewRecorder()
 	server.CreatePaymentPost(createW, createReq)
 
-	var createResp internalclient.Payment
+	var createResp Payment
 	json.NewDecoder(createW.Body).Decode(&createResp)
 
 	payment, err := server.GetPayment(*createResp.Id)
@@ -533,7 +531,7 @@ func TestServer_CompletePayment_Existing(t *testing.T) {
 	createW := httptest.NewRecorder()
 	server.CreatePaymentPost(createW, createReq)
 
-	var createResp internalclient.Payment
+	var createResp Payment
 	json.NewDecoder(createW.Body).Decode(&createResp)
 
 	err := server.CompletePayment(*createResp.Id)

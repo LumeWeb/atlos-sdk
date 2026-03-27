@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -85,12 +86,12 @@ func TestServer_AssetListPost(t *testing.T) {
 		t.Errorf("AssetListPost() should return 200 status")
 	}
 
-	var response AssetListResponse
+	var response []Asset
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Errorf("AssetListPost() should return valid JSON: %v", err)
 	}
 
-	if len(response.Assets) == 0 {
+	if len(response) == 0 {
 		t.Errorf("AssetListPost() should return assets list")
 	}
 }
@@ -275,7 +276,8 @@ func TestServer_CancelPost(t *testing.T) {
 func TestServer_FindByHashPost(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
 
-	req := httptest.NewRequest("POST", "/Transaction/FindByHash", nil)
+	body := `{"MerchantId":"test-merchant","BlockchainHash":"0x123"}`
+	req := httptest.NewRequest("POST", "/Transaction/FindByHash", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	server.FindByHashPost(w, req)
@@ -288,7 +290,8 @@ func TestServer_FindByHashPost(t *testing.T) {
 func TestServer_TransactionListPost(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
 
-	req := httptest.NewRequest("POST", "/Transaction/List", nil)
+	body := `{"MerchantId":"test-merchant"}`
+	req := httptest.NewRequest("POST", "/Transaction/List", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	server.TransactionListPost(w, req)
@@ -314,7 +317,8 @@ func TestServer_CancelPayoutPost(t *testing.T) {
 func TestServer_SendTokenPost(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
 
-	req := httptest.NewRequest("POST", "/Wallet/SendToken", nil)
+	body := `{"MerchantId":"test-merchant","RecipientAddress":"0x1234567890","AssetCode":"BTC","BlockchainCode":"BTC"}`
+	req := httptest.NewRequest("POST", "/Wallet/SendToken", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	server.SendTokenPost(w, req)

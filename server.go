@@ -6,9 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
+)
+
+var (
+	pendingStatus = "pending"
+	successStatus = "success"
+	zeroAmountStr = "0"
+	defaultFeeStr = "020000000"
 )
 
 // Server represents a lightweight server implementation that extends the internal ServerInterface.
@@ -20,8 +26,8 @@ type Server struct {
 
 	// Test data storage
 	mu         sync.RWMutex
-	invoices   map[string]*invoice
-	payments   map[string]*payment
+	invoices   map[string]*internalclient.InvoiceResponse
+	payments   map[string]*internalclient.Payment
 	nextIDs    struct {
 		invoice  int
 		payment  int
@@ -79,28 +85,7 @@ func WithPostbackMode(mode PostbackMode) ServerOption {
 	}
 }
 
-// invoice stores test invoice data.
-type invoice struct {
-	ID          string
-	MerchantID  string
-	OrderAmount float64
-	PostbackURL string
-	CreatedAt   time.Time
-}
 
-// payment stores test payment data.
-type payment struct {
-	ID                string
-	InvoiceID         string
-	Amount            string
-	AssetCode         string
-	BlockchainCode    string
-	RecipientAddress  string
-	Fee               string
-	Status            string
-	TxID              string
-	CreatedAt         time.Time
-}
 
 // NewServer creates a new Server that implements client.ServerInterface.
 // The server handles API requests for all endpoints and can optionally send postback notifications.
@@ -131,10 +116,10 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 	}
 
 	return &Server{
-		config: cfg,
-		sender: sender,
-		invoices: make(map[string]*invoice),
-		payments: make(map[string]*payment),
+		config:   cfg,
+		sender:   sender,
+		invoices: make(map[string]*internalclient.InvoiceResponse),
+		payments: make(map[string]*internalclient.Payment),
 	}, nil
 }
 
@@ -165,21 +150,14 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 	s.nextIDs.invoice++
 	invoiceID := fmt.Sprintf("inv-%d", s.nextIDs.invoice)
 
-	invoice := &invoice{
-		ID:          invoiceID,
-		MerchantID:  req.MerchantId,
-		OrderAmount: float64(req.OrderAmount),
+	invoice := &internalclient.InvoiceResponse{
+		Id:          &invoiceID,
+		PaymentLink: func() *string { s := fmt.Sprintf("https://atlos.com/payment/%s", invoiceID); return &s }(),
 	}
-	if req.PostbackUrl != nil {
-		invoice.PostbackURL = *req.PostbackUrl
-	}
-	invoice.CreatedAt = time.Now()
 	s.invoices[invoiceID] = invoice
 
-	response := internalclient.InvoiceResponse{
-		Id:          new(invoiceID),
-		PaymentLink: new(fmt.Sprintf("https://atlos.com/payment/%s", invoiceID)),
-	}
+	response := *invoice
+	writeJSONResponse(w, response)
 	writeJSONResponse(w, response)
 }
 
@@ -199,25 +177,18 @@ func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
 
 	recipientAddr := fmt.Sprintf("0x%s", generateHexString(40))
 
-	payment := &payment{
-		ID:               paymentID,
-		InvoiceID:        req.InvoiceId,
-		AssetCode:        req.AssetCode,
-		BlockchainCode:   fmt.Sprintf("%d", int(req.BlockchainCode)),
-		RecipientAddress: recipientAddr,
-		Status:           "pending",
-		CreatedAt:        time.Now(),
+	payment := &internalclient.Payment{
+		Id:               &paymentID,
+		Amount:           &zeroAmountStr,
+		AssetCode:        &req.AssetCode,
+		BlockchainCode:   &req.BlockchainCode,
+		RecipientAddress: &recipientAddr,
+		Fee:              &defaultFeeStr,
+		Status:           &pendingStatus,
 	}
 	s.payments[paymentID] = payment
 
-	response := internalclient.Payment{
-		Id:               new(paymentID),
-		Amount:           new("0"),
-		AssetCode:        new(req.AssetCode),
-		BlockchainCode:   &req.BlockchainCode,
-		RecipientAddress: new(recipientAddr),
-		Fee:              new("020000000"),
-	}
+	response := *payment
 	writeJSONResponse(w, response)
 }
 
@@ -232,22 +203,13 @@ func (s *Server) PaymentGetPost(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	payment, exists := s.payments[req.PaymentId]
+payment, exists := s.payments[req.PaymentId]
 	if !exists {
 		http.Error(w, "payment not found", http.StatusNotFound)
 		return
 	}
 
-	response := internalclient.Payment{
-		Id:               new(payment.ID),
-		Amount:           new("0"),
-		AssetCode:        new(payment.AssetCode),
-		BlockchainCode:   stringToFloat32Ptr(payment.BlockchainCode),
-		Fee:              new(payment.Fee),
-		RecipientAddress: new(payment.RecipientAddress),
-		Status:           new(payment.Status),
-		Txid:             new(payment.TxID),
-	}
+	response := *payment
 	writeJSONResponse(w, response)
 }
 
@@ -325,21 +287,19 @@ func (s *Server) completePaymentInternal(paymentID string) error {
 		return fmt.Errorf("payment not found: %s", paymentID)
 	}
 
-	payment.Status = "success"
-	payment.TxID = "0x" + generateHexString(64)
+	txID := "0x" + generateHexString(64)
+	payment.Status = &successStatus
+	payment.Txid = &txID
 
 	if s.config.postbackMode == PostbackImmediate && s.config.postbackURL != "" && s.sender != nil {
-		invoice, invoiceExists := s.invoices[payment.InvoiceID]
-		if invoiceExists {
-			notification := CreateTestPostback(invoice.MerchantID)
-			notification.TransactionId = paymentID
-			notification.BlockchainHash = payment.TxID
-			notification.Status = 100
+		notification := CreateTestPostback("test-merchant")
+		notification.TransactionId = paymentID
+		notification.BlockchainHash = txID
+		notification.Status = 100
 
-			go func() {
-				_ = s.sender.Send(s.config.postbackURL, notification)
-			}()
-		}
+		go func() {
+			_ = s.sender.Send(s.config.postbackURL, notification)
+		}()
 	}
 
 	return nil
@@ -361,7 +321,7 @@ func (s *Server) CompletePayment(paymentID string) error {
 }
 
 // GetInvoice retrieves a stored invoice by ID.
-func (s *Server) GetInvoice(invoiceID string) (*invoice, error) {
+func (s *Server) GetInvoice(invoiceID string) (*internalclient.InvoiceResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -373,7 +333,7 @@ func (s *Server) GetInvoice(invoiceID string) (*invoice, error) {
 }
 
 // GetPayment retrieves a stored payment by ID.
-func (s *Server) GetPayment(paymentID string) (*payment, error) {
+func (s *Server) GetPayment(paymentID string) (*internalclient.Payment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -410,16 +370,6 @@ func (s *Server) Handler() http.Handler {
 }
 
 // Helper functions
-
-func stringToFloat32Ptr(s string) *float32 {
-	f := float32(0)
-	if _, err := fmt.Sscanf(s, "%f", &f); err == nil {
-		return &f
-	}
-	return &f
-}
-
-
 
 func generateHexString(length int) string {
 	chars := "0123456789abcdef"

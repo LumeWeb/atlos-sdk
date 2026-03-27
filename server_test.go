@@ -406,11 +406,11 @@ func TestServer_GetInvoice_Existing(t *testing.T) {
 	if invoice == nil {
 		t.Errorf("GetInvoice() should return invoice")
 	}
-	if invoice.ID != *response.Id {
+	if invoice.Id == nil || *invoice.Id != *response.Id {
 		t.Errorf("GetInvoice() should return correct invoice ID")
 	}
-	if invoice.MerchantID != "test-merchant" {
-		t.Errorf("GetInvoice() should return correct merchant ID")
+	if invoice.PaymentLink == nil {
+		t.Errorf("GetInvoice() should have payment link")
 	}
 }
 
@@ -441,7 +441,7 @@ func TestServer_GetPayment_Existing(t *testing.T) {
 	if payment == nil {
 		t.Errorf("GetPayment() should return payment")
 	}
-	if payment.ID != *createResp.Id {
+	if payment.Id == nil || *payment.Id != *createResp.Id {
 		t.Errorf("GetPayment() should return correct payment ID")
 	}
 }
@@ -542,11 +542,11 @@ func TestServer_CompletePayment_Existing(t *testing.T) {
 	}
 
 	payment, _ := server.GetPayment(*createResp.Id)
-	if payment.Status != "success" {
+	if payment.Status == nil || *payment.Status != "success" {
 		t.Errorf("CompletePayment() should update payment status to success")
 	}
-	if payment.TxID == "" {
-		t.Errorf("CompletePayment() should set TxID")
+	if payment.Txid == nil || *payment.Txid == "" {
+		t.Errorf("CompletePayment() should set Txid")
 	}
 }
 

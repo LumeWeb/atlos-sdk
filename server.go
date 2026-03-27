@@ -125,10 +125,7 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 
 // AssetListPost handles /Asset/List requests and returns available assets and blockchains.
 func (s *Server) AssetListPost(w http.ResponseWriter, r *http.Request) {
-	response := AssetListResponse{
-		Assets: AssetsFromAtlas,
-	}
-	writeJSONResponse(w, response)
+	writeJSONResponse(w, AssetsFromAtlas)
 }
 
 // InvoiceCancelPost handles /Invoice/Cancel requests.
@@ -157,7 +154,6 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 	s.invoices[invoiceID] = invoice
 
 	response := *invoice
-	writeJSONResponse(w, response)
 	writeJSONResponse(w, response)
 }
 
@@ -225,12 +221,59 @@ func (s *Server) CancelPost(w http.ResponseWriter, r *http.Request) {
 
 // FindByHashPost handles /Transaction/FindByHash requests.
 func (s *Server) FindByHashPost(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
+	var req internalclient.FindByHashPostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// For test purposes, return mock transaction data
+	isFound := req.BlockchainHash != nil && *req.BlockchainHash != ""
+	amount := float32(100.0)
+	status := float32(100.0)
+
+	response := internalclient.FindByHashPostResponseBody{
+		IsFound: &isFound,
+		Transaction: &internalclient.Transaction{
+			Id:             new("txn-123"),
+			MerchantId:     new("test-merchant"),
+			Amount:         &amount,
+			AssetCode:      new("BTC"),
+			BlockchainCode: new("BTC"),
+			BlockchainHash: req.BlockchainHash,
+			Status:         &status,
+		},
+	}
+	writeJSONResponse(w, response)
 }
 
 // TransactionListPost handles /Transaction/List requests.
 func (s *Server) TransactionListPost(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
+	var req internalclient.TransactionListPostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// For test purposes, return mock transaction list
+	totalCount := float32(1)
+	amount := float32(100.0)
+	status := float32(100)
+
+	response := internalclient.TransactionListPostResponseBody{
+		TotalCount: &totalCount,
+		Transactions: &[]internalclient.Transaction{
+			{
+				Id:             new("txn-456"),
+				MerchantId:     new("test-merchant"),
+				Amount:         &amount,
+				AssetCode:      new("BTC"),
+				BlockchainCode: new("BTC"),
+				Status:         &status,
+			},
+		},
+	}
+	writeJSONResponse(w, response)
 }
 
 // CancelPayoutPost handles /Wallet/CancelPayout requests.
@@ -240,7 +283,21 @@ func (s *Server) CancelPayoutPost(w http.ResponseWriter, r *http.Request) {
 
 // SendTokenPost handles /Wallet/SendToken requests.
 func (s *Server) SendTokenPost(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
+	var req internalclient.SendTokenPostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// For test purposes, return mock send token response
+	response := internalclient.SendTokenPostResponseBody{
+		Id:               new("inv-789"),
+		TokenAmount:      new("100.0"),
+		AssetCode:        &req.AssetCode,
+		BlockchainCode:   &req.BlockchainCode,
+		RecipientAddress: &req.RecipientAddress,
+	}
+	writeJSONResponse(w, response)
 }
 
 // completePaymentRequest represents a request to manually complete a payment.

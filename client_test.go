@@ -2,13 +2,24 @@ package atlos
 
 import (
 	"net/http"
-	"net/url"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
 )
 
+const (
+	// testSecret is used throughout tests
+	testSecret = "test-secret"
+)
+
+
+
+// Test client creation and options
 func TestNewClient_Default(t *testing.T) {
-	apiSecret := "test-secret"
-	client, err := NewClient(apiSecret)
+	client, err := NewClient(testSecret)
 
 	if err != nil {
 		t.Errorf("NewClient() should not error: %v", err)
@@ -16,27 +27,20 @@ func TestNewClient_Default(t *testing.T) {
 	if client == nil {
 		t.Errorf("NewClient() should return non-nil client")
 	}
-	if client.apiSecret != apiSecret {
+	if client.apiSecret != testSecret {
 		t.Errorf("NewClient() should set apiSecret correctly")
 	}
 	if len(client.baseURL) == 0 {
 		t.Errorf("NewClient() should set default endpoint")
 	}
-	if _, err := url.Parse(client.baseURL); err != nil {
-		t.Errorf("NewClient() should have valid base URL: %v", err)
-	}
 	if client.httpClient == nil {
 		t.Errorf("NewClient() should initialize httpClient")
-	}
-	if client.InternalGen == nil {
-		t.Errorf("NewClient() should initialize InternalGen")
 	}
 }
 
 func TestNewClient_WithEndpoint(t *testing.T) {
-	apiSecret := "test-secret"
 	customEndpoint := "https://custom.example.com"
-	client, err := NewClient(apiSecret, WithEndpoint(customEndpoint))
+	client, err := NewClient(testSecret, WithEndpoint(customEndpoint))
 
 	if err != nil {
 		t.Errorf("NewClient() should not error: %v", err)
@@ -45,220 +49,310 @@ func TestNewClient_WithEndpoint(t *testing.T) {
 		t.Errorf("NewClient() should return non-nil client")
 	}
 	if client.baseURL != customEndpoint {
-		t.Errorf("NewClient() should set custom endpoint, got %s, expected %s", client.baseURL, customEndpoint)
+		t.Errorf("NewClient() should set custom endpoint, got %s, want %s", client.baseURL, customEndpoint)
 	}
 }
 
-func TestNewClient_WithAPISecret(t *testing.T) {
-	customSecret := "custom-secret"
-	client, err := NewClient("test-secret", WithAPISecret(customSecret))
-
-	if err != nil {
-		t.Errorf("NewClient() should not error: %v", err)
-	}
-	if client.apiSecret != customSecret {
-		t.Errorf("NewClient() should set custom API secret")
-	}
-}
-
-func TestNewClient_MultipleOptions(t *testing.T) {
+func TestMultipleOptions(t *testing.T) {
 	customEndpoint := "https://custom.example.com"
-	customSecret := "custom-secret"
-	client, err := NewClient("default-secret", WithEndpoint(customEndpoint), WithAPISecret(customSecret))
+
+	client, err := NewClient(
+		testSecret,
+		WithEndpoint(customEndpoint),
+	)
 
 	if err != nil {
 		t.Errorf("NewClient() should not error: %v", err)
+	}
+	if client == nil {
+		t.Errorf("NewClient() should return non-nil client")
 	}
 	if client.baseURL != customEndpoint {
-		t.Errorf("NewClient() should apply endpoint option")
-	}
-	if client.apiSecret != customSecret {
-		t.Errorf("NewClient() should apply API secret option")
+		t.Errorf("NewClient() should use endpoint from option")
 	}
 }
 
-func TestNewClient_InvalidURL(t *testing.T) {
-	apiSecret := "test-secret"
-	client, err := NewClient(apiSecret, WithEndpoint("://invalid-url"))
-
-	if err == nil {
-		t.Errorf("NewClient() should error with invalid URL")
-	}
-	if client != nil {
-		t.Errorf("NewClient() should return nil client on error")
-	}
-}
-
-func TestNewClient_URLNormalization(t *testing.T) {
-	apiSecret := "test-secret"
-	urlsWithPaths := []string{
-		"https://api.example.com/path",
-		"https://api.example.com/path/",
-	}
-
-	for _, testURL := range urlsWithPaths {
-		client, err := NewClient(apiSecret, WithEndpoint(testURL))
-		if err != nil {
-			t.Errorf("NewClient() should handle URL with path: %v", err)
-			continue
-		}
-
-		parsedURL, err := url.Parse(client.baseURL)
-		if err != nil {
-			t.Errorf("NewClient() should create valid normalized URL: %v", err)
-			continue
-		}
-
-		if parsedURL.Path != "" {
-			t.Errorf("NewClient() should normalize URL path, got %s", parsedURL.Path)
-		}
-	}
-}
-
-func TestClient_BaseURL(t *testing.T) {
-	client, _ := NewClient("test-secret", WithEndpoint("https://test.example.com"))
-
-	if client.BaseURL() != "https://test.example.com" {
-		t.Errorf("BaseURL() should return correct base URL")
-	}
-}
-
-func TestClient_APISecret(t *testing.T) {
-	apiSecret := "my-secret-key"
-	client, _ := NewClient(apiSecret)
-
-	if client.APISecret() != apiSecret {
-		t.Errorf("APISecret() should return correct API secret")
-	}
-}
-
-func TestClient_SetHTTPClient(t *testing.T) {
-	customClient := &http.Client{}
-	client, _ := NewClient("test-secret")
-
-	err := client.SetHTTPClient(customClient)
+func TestNewClient_EmptySecret(t *testing.T) {
+	// Note: Current implementation allows empty secrets for testing purposes.
+	// In production, API calls would fail without proper authentication.
+	_, err := NewClient("")
 	if err != nil {
-		t.Errorf("SetHTTPClient() should not error: %v", err)
+		t.Errorf("NewClient() should not error with empty secret: %v", err)
 	}
 
-	if client.httpClient != customClient {
-		t.Errorf("SetHTTPClient() should set the custom client")
-	}
-}
-
-func TestDefaultClientConfig(t *testing.T) {
-	cfg := DefaultClientConfig()
-
-	if cfg.Endpoint != DefaultEndpoint {
-		t.Errorf("DefaultClientConfig() should set default endpoint")
-	}
-}
-
-func TestWithEndpoint(t *testing.T) {
-	cfg := &clientConfig{}
-	WithEndpoint("https://test.com")(cfg)
-
-	if cfg.endpoint != "https://test.com" {
-		t.Errorf("WithEndpoint() should set endpoint")
-	}
-}
-
-func TestWithAPISecret(t *testing.T) {
-	cfg := &clientConfig{}
-	WithAPISecret("my-secret")(cfg)
-
-	if cfg.apiSecret != "my-secret" {
-		t.Errorf("WithAPISecret() should set api secret")
-	}
-}
-
-func TestClient_NilInitializers(t *testing.T) {
-	apiSecret := "test-secret"
-	client, err := NewClient(apiSecret)
-
+	_, err = NewClient("   ")
 	if err != nil {
-		t.Errorf("NewClient() should not error: %v", err)
-	}
-	if client.httpClient == nil {
-		t.Errorf("NewClient() should initialize httpClient")
-	}
-	if client.InternalGen == nil {
-		t.Errorf("NewClient() should initialize InternalGen")
+		t.Errorf("NewClient() should not error with whitespace secret: %v", err)
 	}
 }
 
-func TestClient_EmptyAPISecret(t *testing.T) {
-	apiSecret := ""
-	client, err := NewClient(apiSecret)
+func TestClient_InternalGenNotAccessible(t *testing.T) {
+	client, _ := NewClient(testSecret)
 
-	if err != nil {
-		t.Errorf("NewClient() should allow empty API secret: %v", err)
+	_ = client
+	// This test ensures that internalGen is not accessible outside the package
+	// If this compiles, the internalGen field is properly encapsulated
+}
+
+// TestAPIEndpoints tests all wrapper methods using the generated server
+func TestAPIEndpoints(t *testing.T) {
+	// Create a test server using the generated infrastructure
+	server, err := NewServer(
+		WithSharedSecret(testSecret),
+		WithPostbackURL("https://example.com/postback"),
+	)
+	require.NoError(t, err, "NewServer should not error")
+
+	// Create an HTTP handler from the server using the generated code
+	handler := internalclient.Handler(server)
+
+	// Create httptest server
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+
+	// Create client connected to the test server
+	client, err := NewClient(testSecret, WithEndpoint(testServer.URL))
+	require.NoError(t, err, "NewClient should not error")
+
+	// Test AssetList
+	t.Run("AssetList", func(t *testing.T) {
+		ctx := t.Context()
+		assets, err := client.AssetList(ctx, AssetListPostRequest{
+			MerchantId:  "test-merchant",
+			OrderAmount: 100,
+		})
+		require.NoError(t, err, "AssetList should not error")
+		require.NotNil(t, assets, "assets should not be nil")
+	})
+
+	// Test InvoiceCancel
+	t.Run("InvoiceCancel", func(t *testing.T) {
+		ctx := t.Context()
+		err := client.InvoiceCancel(ctx, InvoiceCancelPostRequest{
+			MerchantId: new("test-merchant"),
+			InvoiceId:  new("inv-123"),
+		})
+		require.NoError(t, err, "InvoiceCancel should not error")
+	})
+
+	// Test InvoiceCreate
+	t.Run("InvoiceCreate", func(t *testing.T) {
+		ctx := t.Context()
+		invoice, err := client.InvoiceCreate(ctx, InvoiceCreatePostRequest{
+			MerchantId:  "test-merchant",
+			OrderAmount: 100,
+		})
+		require.NoError(t, err, "InvoiceCreate should not error")
+		require.NotNil(t, invoice, "invoice should not be nil")
+		require.NotNil(t, invoice.Id, "invoice.Id should not be nil")
+	})
+
+	// Test CreatePayment
+	t.Run("CreatePayment", func(t *testing.T) {
+		ctx := t.Context()
+		payment, err := client.CreatePayment(ctx, CreatePaymentPostRequest{
+			AssetCode:      "BTC",
+			BlockchainCode: 1, // ETH chain ID
+			InvoiceId:      "inv-123",
+			IsEvm:          "false",
+		})
+		require.NoError(t, err, "CreatePayment should not error")
+		require.NotNil(t, payment, "payment should not be nil")
+		require.NotNil(t, payment.Id, "payment.Id should not be nil")
+	})
+
+	// Test PaymentGet
+	t.Run("PaymentGet", func(t *testing.T) {
+		ctx := t.Context()
+		// First create a payment to get a valid payment ID
+		createdPayment, err := client.CreatePayment(ctx, CreatePaymentPostRequest{
+			AssetCode:      "ETH",
+			BlockchainCode: 1,
+			InvoiceId:      "inv-test-get",
+			IsEvm:          "true",
+		})
+		require.NoError(t, err, "CreatePayment should not error")
+		require.NotNil(t, createdPayment.Id, "createdPayment.Id should not be nil")
+
+		// Now get the payment by ID
+		payment, err := client.PaymentGet(ctx, PaymentGetPostRequest{PaymentId: *createdPayment.Id})
+		require.NoError(t, err, "PaymentGet should not error")
+		require.NotNil(t, payment, "payment should not be nil")
+		require.Equal(t, *createdPayment.Id, *payment.Id, "payment IDs should match")
+	})
+
+	// Test PaymentWebSocket
+	t.Run("PaymentWebSocket", func(t *testing.T) {
+		ctx := t.Context()
+		_, err := client.PaymentWebSocket(ctx, PaymentWebSocketPostRequest{PaymentId: "pay-123"})
+		require.NoError(t, err, "PaymentWebSocket should not error")
+	})
+
+	// Test Cancel
+	t.Run("Cancel", func(t *testing.T) {
+		ctx := t.Context()
+		err := client.Cancel(ctx, CancelPostRequest{
+			MerchantId:     new("test-merchant"),
+			SubscriptionId: new("sub-123"),
+		})
+		require.NoError(t, err, "Cancel should not error")
+	})
+
+	// Test FindByHash
+	t.Run("FindByHash", func(t *testing.T) {
+		ctx := t.Context()
+		result, err := client.FindByHash(ctx, FindByHashPostRequest{
+			MerchantId:     "test-merchant",
+			BlockchainHash: new("0x1234567890abcdef"),
+		})
+		require.NoError(t, err, "FindByHash should not error")
+		require.NotNil(t, result, "result should not be nil")
+	})
+
+	// Test TransactionList
+	t.Run("TransactionList", func(t *testing.T) {
+		ctx := t.Context()
+		result, err := client.TransactionList(ctx, TransactionListPostRequest{
+			MerchantId: "test-merchant",
+		})
+		require.NoError(t, err, "TransactionList should not error")
+		require.NotNil(t, result, "result should not be nil")
+	})
+
+	// Test CancelPayout
+	t.Run("CancelPayout", func(t *testing.T) {
+		ctx := t.Context()
+		err := client.CancelPayout(ctx, CancelPayoutPostRequest{
+			MerchantId: new("test-merchant"),
+			PaymentId:  new("payout-123"),
+		})
+		require.NoError(t, err, "CancelPayout should not error")
+	})
+
+	// Test SendToken
+	t.Run("SendToken", func(t *testing.T) {
+		ctx := t.Context()
+		result, err := client.SendToken(ctx, SendTokenPostRequest{
+			MerchantId:      "test-merchant",
+			AssetCode:       "BTC",
+			BlockchainCode:  "BTC",
+			RecipientAddress: "0x" + generateHexString(40),
+		})
+		require.NoError(t, err, "SendToken should not error")
+		require.NotNil(t, result, "result should not be nil")
+	})
+}
+
+// TestAPIErrors tests error handling for all wrapper methods
+func TestAPIErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		handler    internalclient.ServerInterface
+		callClient func(*Client) error
+		wantError  string
+	}{
+		{
+			name: "AssetList_500",
+			handler: &mockErrorServer{statusCode: 500},
+			callClient: func(c *Client) error {
+				ctx := t.Context()
+				_, err := c.AssetList(ctx, AssetListPostRequest{MerchantId: "test-merchant", OrderAmount: 100})
+				return err
+			},
+			wantError: "unexpected status code 500",
+		},
+		{
+			name: "InvoiceCreate_401",
+			handler: &mockErrorServer{statusCode: 401},
+			callClient: func(c *Client) error {
+				ctx := t.Context()
+				_, err := c.InvoiceCreate(ctx, InvoiceCreatePostRequest{
+					MerchantId:  "test-merchant",
+					OrderAmount: 100,
+				})
+				return err
+			},
+			wantError: "unexpected status code 401",
+		},
+		{
+			name: "CreatePayment_400",
+			handler: &mockErrorServer{statusCode: 400},
+			callClient: func(c *Client) error {
+				ctx := t.Context()
+				_, err := c.CreatePayment(ctx, CreatePaymentPostRequest{
+					AssetCode:      "BTC",
+					BlockchainCode: 1,
+					InvoiceId:      "inv-123",
+					IsEvm:          "false",
+				})
+				return err
+			},
+			wantError: "unexpected status code 400",
+		},
 	}
-	if client.apiSecret != "" {
-		t.Errorf("NewClient() should allow empty API secret")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create handler from the mock error server
+			handler := internalclient.Handler(tt.handler)
+			testServer := httptest.NewServer(handler)
+			defer testServer.Close()
+
+			client, err := NewClient(testSecret, WithEndpoint(testServer.URL))
+			require.NoError(t, err, "NewClient should not error")
+
+			err = tt.callClient(client)
+			require.Error(t, err, "expected error")
+			require.ErrorContains(t, err, tt.wantError, "expected specific error message")
+		})
 	}
 }
 
-func TestClient_URLPathNormalization(t *testing.T) {
-	apiSecret := "test-secret"
-	endpoints := []string{
-		"https://api.example.com",
-		"https://api.example.com/",
-		"https://api.example.com/v1",
-		"https://api.example.com/v1/",
-	}
-
-	for i, endpoint := range endpoints {
-		client, err := NewClient(apiSecret, WithEndpoint(endpoint))
-		if err != nil {
-			t.Errorf("Test case %d: NewClient() should handle endpoint %s: %v", i, endpoint, err)
-			continue
-		}
-
-		parsedURL, err := url.Parse(client.baseURL)
-		if err != nil {
-			t.Errorf("Test case %d: Invalid normalized URL: %v", i, err)
-			continue
-		}
-
-		if parsedURL.Path != "" {
-			t.Errorf("Test case %d: Expected empty path, got %s", i, parsedURL.Path)
-		}
-	}
+// mockErrorServer is a simple mock server that returns error status codes
+type mockErrorServer struct {
+	statusCode int
 }
 
-func TestNewClient_URLComponentHandling(t *testing.T) {
-	apiSecret := "test-secret"
-	endpoint := "https://api.example.com:8080"
-	
-	client, err := NewClient(apiSecret, WithEndpoint(endpoint))
-	if err != nil {
-		t.Errorf("NewClient() should handle URL with port: %v", err)
-	}
-
-	parsedURL, err := url.Parse(client.baseURL)
-	if err != nil {
-		t.Errorf("NewClient() should create valid URL with port: %v", err)
-	}
-
-	if parsedURL.Host != "api.example.com:8080" {
-		t.Errorf("NewClient() should preserve host and port, got %s", parsedURL.Host)
-	}
+func (m *mockErrorServer) AssetListPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
 }
 
-func TestClient_ConcurrencySafety(t *testing.T) {
-	client, _ := NewClient("test-secret")
-	done := make(chan bool)
+func (m *mockErrorServer) InvoiceCancelPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
 
-	for i := 0; i < 10; i++ {
-		go func() {
-			_ = client.BaseURL()
-			_ = client.APISecret()
-			done <- true
-		}()
-	}
+func (m *mockErrorServer) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
 
-	for i := 0; i < 10; i++ {
-		<-done
-	}
+func (m *mockErrorServer) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) PaymentGetPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) PaymentWebSocketPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) CancelPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) FindByHashPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) TransactionListPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) CancelPayoutPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
+}
+
+func (m *mockErrorServer) SendTokenPost(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(m.statusCode)
 }

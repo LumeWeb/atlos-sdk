@@ -1,0 +1,759 @@
+openapi: 3.0.0
+info:
+  title: ATLOS API
+  description: REST API for ATLOS payment gateway
+  version: 1.0.0
+  contact:
+    name: ATLOS
+    url: https://atlos.io
+  license:
+    name: Proprietary
+    url: https://atlos.io/terms
+servers:
+  - url: https://api.atlos.io/gateway/rest
+    description: Production API
+components:
+  securitySchemes:
+    ApiSecret:
+      type: apiKey
+      in: header
+      name: ApiSecret
+      description: Your API secret from Merchant Panel
+  schemas:
+    MerchantId:
+      type: string
+    OrderId:
+      type: string
+    OrderAmount:
+      type: number
+    OrderCurrency:
+      type: string
+    TokenAmount:
+      type: number
+    AssetCode:
+      type: string
+    BlockchainCode:
+      type: string
+    RecipientAddress:
+      type: string
+    UserName:
+      type: string
+    UserEmail:
+      type: string
+    Memo:
+      type: string
+    TimeExpire:
+      type: string
+    SendEmail:
+      type: boolean
+    PostbackUrl:
+      type: string
+    PaymentId:
+      type: string
+    BlockchainHash:
+      type: string
+    InvoiceId:
+      type: string
+    SubscriptionId:
+      type: string
+    IsEvm:
+      type: string
+    UserAddress:
+      type: string
+    TimeStart:
+      type: string
+    TimeFinish:
+      type: string
+    Skip:
+      type: number
+    Take:
+      type: number
+    ResetSubscription:
+      type: boolean
+    Subscription:
+      type: string
+    Id:
+      type: string
+    Price:
+      type: number
+    Amount:
+      type: number
+    Fee:
+      type: string
+    SenderAddress:
+      type: string
+    BlockNumber:
+      type: number
+    TimeSent:
+      type: string
+    Status:
+      type: number
+    Txid:
+      type: string
+    Name:
+      type: string
+    DisplayDecimals:
+      type: number
+    IsToken:
+      type: boolean
+    IsStable:
+      type: boolean
+    Decimals:
+      type: number
+    ChainId:
+      type: number
+    TokenAddress:
+      type: string
+    ContractAddress:
+      type: string
+    TotalCount:
+      type: number
+    IsFound:
+      type: boolean
+    SendTokenPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        OrderId:
+          type: string
+        OrderAmount:
+          type: number
+        OrderCurrency:
+          type: string
+        TokenAmount:
+          type: number
+        AssetCode:
+          type: string
+        BlockchainCode:
+          type: string
+        RecipientAddress:
+          type: string
+        UserName:
+          type: string
+        UserEmail:
+          type: string
+        Memo:
+          type: string
+        TimeExpire:
+          type: string
+        SendEmail:
+          type: boolean
+        PostbackUrl:
+          type: string
+      required:
+        - MerchantId
+        - AssetCode
+        - BlockchainCode
+        - RecipientAddress
+    SendTokenPostResponseBody:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: invoice ID
+        TokenAmount:
+          type: string
+          description: the amount of asset sent
+        AssetCode:
+          type: string
+          description: asset code
+        BlockchainCode:
+          type: string
+          description: blockchain code
+        RecipientAddress:
+          type: string
+          description: recipient wallet address
+    CancelPayoutPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        PaymentId:
+          type: string
+    AssetListPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        OrderAmount:
+          type: number
+        OrderCurrency:
+          type: string
+      required:
+        - MerchantId
+        - OrderAmount
+    Blockchain:
+      type: object
+      properties:
+        Code:
+          type: string
+          description: blockchain code, e.g. "ETH"
+        Name:
+          type: string
+          description: blockchain name, e.g. "Ethereum"
+        Decimals:
+          type: number
+          description: number of decimal places for the asset on this blockchain
+        IsEvm:
+          type: boolean
+          description: whether or not this is an EVM-compatible blockchain
+        ChainId:
+          type: number
+          description: EVM chain ID – only for EVM blockchains
+        TokenAddress:
+          type: string
+          description: smart contract address – only for ERC20 tokens
+        ContractAddress:
+          type: string
+          description: contract address for payment settlement
+    Asset:
+      type: object
+      properties:
+        Code:
+          type: string
+          description: asset symbol, e.g. "USDC"
+        Name:
+          type: string
+          description: asset name, e.g. "USD Coin"
+        DisplayDecimals:
+          type: number
+          description: how many decimal places to display in the UI
+        IsToken:
+          type: boolean
+          description: whether or not this asset is an ERC20 token
+        IsStable:
+          type: boolean
+          description: whether or not this asset is a stablecoin
+        Price:
+          type: number
+          description: the price of asset in orderCurrency
+        Amount:
+          type: number
+          description: OrderAmount converted to asset
+        Blockchains:
+          type: array
+          description: the list of blockchains, on which this asset can be sent
+          items:
+            $ref: '#/components/schemas/Blockchain'
+    InvoiceCreatePostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        OrderId:
+          type: string
+        OrderAmount:
+          type: number
+        OrderCurrency:
+          type: string
+        UserName:
+          type: string
+        UserEmail:
+          type: string
+        Subscription:
+          type: string
+        ResetSubscription:
+          type: boolean
+        Memo:
+          type: string
+        TimeExpire:
+          type: string
+        SendEmail:
+          type: boolean
+        PostbackUrl:
+          type: string
+      required:
+        - MerchantId
+        - OrderAmount
+    InvoiceResponse:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: invoice ID
+        PaymentLink:
+          type: string
+          description: URL of the payment link
+    PaymentWebSocketPostRequest:
+      type: object
+      properties:
+        paymentId:
+          type: string
+      required:
+        - paymentId
+    Transaction:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: transaction ID (generated by ATLOS)
+        SubscriptionId:
+          type: string
+          description: subscription ID (generated by ATLOS)
+        MerchantId:
+          type: string
+          description: your merchant ID
+        OrderId:
+          type: string
+          description: the order ID you passed to the widget or the API as orderId
+        Amount:
+          type: number
+          description: the amount of asset received
+        AssetCode:
+          type: string
+          description: asset code
+        BlockchainCode:
+          type: string
+          description: blockchain code
+        Fee:
+          type: string
+          description: the amount of the commission fee collected
+        SenderAddress:
+          type: string
+          description: for EVM blockchains, the sender's wallet address
+        RecipientAddress:
+          type: string
+          description: the receiving wallet address
+        BlockchainHash:
+          type: string
+          description: blockchain transaction hash (a.k.a. blockchain transaction ID)
+        BlockNumber:
+          type: number
+          description: blockchain block height
+        TimeSent:
+          type: string
+          description: time when the transaction was recorded in a block
+        Status:
+          type: number
+          description: 100 (success)
+    FindByHashPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        BlockchainHash:
+          type: string
+      required:
+        - MerchantId
+    FindByHashPostResponseBody:
+      type: object
+      properties:
+        IsFound:
+          type: boolean
+          description: whether or not this transaction hash exists
+        Transaction:
+          type: object
+          description: transaction information
+          properties:
+            Id:
+              type: string
+              description: transaction ID (generated by ATLOS)
+            SubscriptionId:
+              type: string
+              description: subscription ID (generated by ATLOS)
+            MerchantId:
+              type: string
+              description: your merchant ID
+            OrderId:
+              type: string
+              description: the order ID you passed to the widget or the API as orderId
+            Amount:
+              type: number
+              description: the amount of asset received
+            AssetCode:
+              type: string
+              description: asset code
+            BlockchainCode:
+              type: string
+              description: blockchain code
+            Fee:
+              type: string
+              description: the amount of the commission fee collected
+            SenderAddress:
+              type: string
+              description: for EVM blockchains, the sender's wallet address
+            RecipientAddress:
+              type: string
+              description: the receiving wallet address
+            BlockchainHash:
+              type: string
+              description: blockchain transaction hash (a.k.a. blockchain transaction ID)
+            BlockNumber:
+              type: number
+              description: blockchain block height
+            TimeSent:
+              type: string
+              description: time when the transaction was recorded in a block
+            Status:
+              type: number
+              description: 100 (success)
+    CancelPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        OrderId:
+          type: string
+        SubscriptionId:
+          type: string
+    InvoiceCancelPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        InvoiceId:
+          type: string
+    CreatePaymentPostRequest:
+      type: object
+      properties:
+        InvoiceId:
+          type: string
+        AssetCode:
+          type: string
+        BlockchainCode:
+          type: number
+        IsEvm:
+          type: string
+        UserAddress:
+          type: string
+      required:
+        - InvoiceId
+        - AssetCode
+        - BlockchainCode
+        - IsEvm
+    Payment:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: payment ID
+        AssetCode:
+          type: string
+          description: asset symbol, e.g. "USDC"
+        BlockchainCode:
+          type: number
+          description: blockchain code, e.g. "ETH"
+        Amount:
+          type: string
+          description: how much asset to send in a string format without decimal point
+        Fee:
+          type: string
+          description: how much commission fee will be taken for this payment
+        RecipientAddress:
+          type: string
+          description: the wallet address where to send the asset
+        Status:
+          type: string
+          description: payment status (always New here)
+        Txid:
+          type: string
+          description: blockchain transaction hash – only if transaction is in the mempool or in a block
+    TransactionListPostRequest:
+      type: object
+      properties:
+        MerchantId:
+          type: string
+        TimeStart:
+          type: string
+        TimeFinish:
+          type: string
+        Skip:
+          type: number
+        Take:
+          type: number
+      required:
+        - MerchantId
+    TransactionListPostResponseBody:
+      type: object
+      properties:
+        TotalCount:
+          type: number
+          description: total number of transactions during the time period
+        Transactions:
+          type: array
+          description: the list of transactions
+          items:
+            $ref: '#/components/schemas/Transaction'
+    PaymentGetPostRequest:
+      type: object
+      properties:
+        PaymentId:
+          type: string
+      required:
+        - PaymentId
+security:
+  - ApiSecret: []
+paths:
+  /Wallet/SendToken:
+    post:
+      operationId: SendTokenPost
+      summary: SendToken
+      description: Creates an outgoing payment.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTokenPostResponseBody'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendTokenPostRequest'
+  /Wallet/CancelPayout:
+    post:
+      operationId: CancelPayoutPost
+      summary: CancelPayout
+      description: Cancels a payout.
+      parameters: []
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelPayoutPostRequest'
+  /Asset/List:
+    post:
+      operationId: AssetListPost
+      summary: AssetList
+      description: Returns a list of assets and blockchains available for payments.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Asset'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetListPostRequest'
+  /Invoice/Create:
+    post:
+      operationId: InvoiceCreatePost
+      summary: InvoiceCreate
+      description: Creates a new invoice.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreatePostRequest'
+  /Payment/WebSocket:
+    post:
+      operationId: PaymentWebSocketPost
+      summary: PaymentWebSocket
+      description: Receives real-time payment updates. ATLOS uses SignalR WebSocket interface to update the client on the payment status. When the payment status becomes success, it also transmits the transaction hash.
+      parameters: []
+      responses:
+        "200":
+          description: Payment update messages sent via SignalR 'PaymentUpdate' event
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebSocketPostRequest'
+  /Transaction/FindByHash:
+    post:
+      operationId: FindByHashPost
+      summary: FindByHash
+      description: Finds transaction by blockchain transaction hash.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FindByHashPostResponseBody'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindByHashPostRequest'
+  /Subscription/Cancel:
+    post:
+      operationId: CancelPost
+      summary: Cancel
+      description: Stops recurrent billing for a user.
+      parameters: []
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelPostRequest'
+  /Invoice/Cancel:
+    post:
+      operationId: InvoiceCancelPost
+      summary: InvoiceCancel
+      description: Cancels an invoice.
+      parameters: []
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCancelPostRequest'
+  /Payment/Create:
+    post:
+      operationId: CreatePaymentPost
+      summary: Create Payment
+      description: Creates a new payment.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentPostRequest'
+  /Transaction/List:
+    post:
+      operationId: TransactionListPost
+      summary: TransactionList
+      description: Fetches all transactions, including incoming and outgoing payments.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListPostResponseBody'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionListPostRequest'
+  /Payment/Get:
+    post:
+      operationId: PaymentGetPost
+      summary: PaymentGet
+      description: Retrieves a payment.
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        "400":
+          description: Bad Request - Invalid input parameters
+        "401":
+          description: Unauthorized - Invalid or missing API secret
+        "404":
+          description: Not Found - Resource not found
+      requestBody:
+        description: Request body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentGetPostRequest'

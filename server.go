@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
+
+	"go.uber.org/zap"
 
 	internalclient "go.lumeweb.com/atlos-sdk/internal/client"
 )
@@ -23,6 +26,7 @@ var (
 type Server struct {
 	config    serverConfig
 	sender    *PostbackSender
+	logger    *zap.Logger
 
 	// Test data storage
 	mu         sync.RWMutex
@@ -52,6 +56,7 @@ type serverConfig struct {
 	apiSecret   string
 	httpClient  *http.Client
 	postbackMode PostbackMode
+	logger    *zap.Logger
 }
 
 // ServerOption configures a Server.
@@ -85,6 +90,13 @@ func WithPostbackMode(mode PostbackMode) ServerOption {
 	}
 }
 
+// WithLogger sets a custom logger for the server.
+func WithLogger(logger *zap.Logger) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.logger = logger
+	}
+}
+
 
 
 // NewServer creates a new Server that implements client.ServerInterface.
@@ -100,6 +112,7 @@ func WithPostbackMode(mode PostbackMode) ServerOption {
 func NewServer(opts ...ServerOption) (*Server, error) {
 	cfg := serverConfig{
 		httpClient: &http.Client{},
+		logger:     zap.NewNop(),
 	}
 
 	for _, opt := range opts {
@@ -110,14 +123,16 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 		return nil, fmt.Errorf("shared secret is required")
 	}
 
-	sender := &PostbackSender{
-		apiSecret: cfg.apiSecret,
-		client:    cfg.httpClient,
+	if cfg.logger == nil {
+		cfg.logger = zap.NewNop()
 	}
+
+	sender := NewPostbackSenderWithLogger(cfg.apiSecret, cfg.logger)
 
 	return &Server{
 		config:   cfg,
 		sender:   sender,
+		logger:   cfg.logger,
 		invoices: make(map[string]*InvoiceResponse),
 		payments: make(map[string]*Payment),
 	}, nil
@@ -430,18 +445,88 @@ func (s *Server) ResetPost(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// loggingMiddleware wraps an http.Handler with zap logging.
+func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		s.logger.Info("Handling HTTP request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+
+		// Wrap the ResponseWriter to capture status code
+		wrapped := &responseWriterWrapper{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+		}
+
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start)
+		s.logger.Info("HTTP request completed",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status_code", wrapped.statusCode),
+			zap.Duration("duration_ms", duration),
+		)
+	})
+}
+
+// responseWriterWrapper wraps http.ResponseWriter to capture the status code.
+type responseWriterWrapper struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+// WriteHeader captures the status code.
+func (w *responseWriterWrapper) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+// withLogging wraps an http.HandlerFunc with logging.
+func withLogging(handler http.HandlerFunc, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		logger.Info("Handling HTTP request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+
+		wrapped := &responseWriterWrapper{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+		}
+
+		handler(wrapped, r)
+
+		duration := time.Since(start)
+		logger.Info("HTTP request completed",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status_code", wrapped.statusCode),
+			zap.Duration("duration_ms", duration),
+		)
+	}
+}
+
 // Handler creates an http.Handler that can be used with http.ListenAndServe.
 // It registers all the Server endpoints using the internal client server generation.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	handler := internalclient.HandlerFromMux(s, mux)
 
-	// Register custom test endpoint for payment completion
-	mux.HandleFunc("/Payment/Complete", s.CompletePaymentPost)
-	// Register custom test endpoint for resetting server state
-	mux.HandleFunc("/Reset", s.ResetPost)
+	// Wrap logging middleware around the handler
+	loggedHandler := s.loggingMiddleware(handler)
 
-	return handler
+	// Register custom test endpoint for payment completion
+	mux.HandleFunc("/Payment/Complete", withLogging(s.CompletePaymentPost, s.logger))
+	// Register custom test endpoint for resetting server state
+	mux.HandleFunc("/Reset", withLogging(s.ResetPost, s.logger))
+
+	return loggedHandler
 }
 
 // Helper functions

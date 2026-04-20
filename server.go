@@ -2,6 +2,7 @@
 package atlos
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -41,10 +42,6 @@ type Server struct {
 	payments   map[string]*Payment
 	// paymentToInvoice maps payment ID → invoice ID so postbacks can look up invoice data
 	paymentToInvoice map[string]string
-	nextIDs    struct {
-		invoice  int
-		payment  int
-	}
 }
 
 // PostbackMode controls when postbacks are sent during payment simulation.
@@ -169,8 +166,7 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.nextIDs.invoice++
-	invoiceID := fmt.Sprintf("inv-%d", s.nextIDs.invoice)
+	invoiceID := generateTransactionID()
 
 	invoice := &InvoiceResponse{
 		Id:          &invoiceID,
@@ -196,8 +192,7 @@ func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.nextIDs.payment++
-	paymentID := fmt.Sprintf("pay-%d", s.nextIDs.payment)
+	paymentID := generateTransactionID()
 
 	recipientAddr := fmt.Sprintf("0x%s", generateHexString(40))
 
@@ -499,8 +494,6 @@ func (s *Server) ResetPost(w http.ResponseWriter, r *http.Request) {
 	s.invoices = make(map[string]*invoiceData)
 	s.payments = make(map[string]*Payment)
 	s.paymentToInvoice = make(map[string]string)
-	s.nextIDs.invoice = 0
-	s.nextIDs.payment = 0
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -596,6 +589,29 @@ func generateHexString(length int) string {
 	result := make([]byte, length)
 	for i := range result {
 		result[i] = chars[i%16]
+	}
+	return string(result)
+}
+
+// generateTransactionID creates a realistic-looking transaction ID
+// similar to real blockchain transaction IDs (e.g., "rxoI1U24RCFUvS")
+// Uses URL-safe base64 alphabet to avoid special characters
+func generateTransactionID() string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	const length = 15
+
+	result := make([]byte, length)
+	if _, err := rand.Read(result); err != nil {
+		// Fallback to deterministic values if crypto/rand fails
+		// This shouldn't happen in practice
+		for i := range result {
+			result[i] = charset[i%len(charset)]
+		}
+		return string(result)
+	}
+
+	for i := range result {
+		result[i] = charset[result[i]%byte(len(charset))]
 	}
 	return string(result)
 }

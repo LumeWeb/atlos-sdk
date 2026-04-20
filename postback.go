@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // PostbackNotification represents a postback notification sent by ATLOS when a payment is confirmed.
@@ -99,29 +101,60 @@ func (p *PostbackNotification) VerifySignature(apiSecret, signature string) (boo
 type PostbackSender struct {
 	apiSecret string
 	client    *http.Client
+	logger    *zap.Logger
 }
 
 // NewPostbackSender creates a new PostbackSender.
 func NewPostbackSender(apiSecret string) *PostbackSender {
+	return NewPostbackSenderWithLogger(apiSecret, zap.NewNop())
+}
+
+// NewPostbackSenderWithLogger creates a new PostbackSender with a custom logger.
+func NewPostbackSenderWithLogger(apiSecret string, logger *zap.Logger) *PostbackSender {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &PostbackSender{
 		apiSecret: apiSecret,
 		client:    &http.Client{},
+		logger:    logger,
 	}
 }
 
 // Send sends a postback notification to the specified endpoint.
 func (ps *PostbackSender) Send(endpoint string, notification *PostbackNotification) error {
+	ps.logger.Info("Sending webhook", 
+		zap.String("endpoint", endpoint),
+		zap.String("transaction_id", notification.TransactionId),
+		zap.String("merchant_id", notification.MerchantId),
+		zap.Float64("amount", notification.Amount),
+		zap.String("blockchain", notification.Blockchain),
+		zap.String("asset", notification.Asset),
+	)
+
 	if err := notification.Validate(); err != nil {
+		ps.logger.Error("Webhook validation failed", 
+			zap.Error(err),
+			zap.String("transaction_id", notification.TransactionId),
+		)
 		return fmt.Errorf("notification validation failed: %w", err)
 	}
 
 	endpointURL, err := url.Parse(endpoint)
 	if err != nil {
+		ps.logger.Error("Invalid webhook endpoint URL", 
+			zap.Error(err),
+			zap.String("endpoint", endpoint),
+		)
 		return fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
 	data, err := json.Marshal(notification)
 	if err != nil {
+		ps.logger.Error("Failed to marshal webhook notification", 
+			zap.Error(err),
+			zap.String("transaction_id", notification.TransactionId),
+		)
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
@@ -131,20 +164,46 @@ func (ps *PostbackSender) Send(endpoint string, notification *PostbackNotificati
 
 	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(data))
 	if err != nil {
+		ps.logger.Error("Failed to create webhook request", 
+			zap.Error(err),
+			zap.String("endpoint", endpoint),
+		)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(SignatureHeader, signature)
 
+	ps.logger.Debug("Sending webhook request",
+		zap.String("endpoint", endpoint),
+		zap.String("method", req.Method),
+		zap.Int("content_length", len(data)),
+	)
+
 	resp, err := ps.client.Do(req)
 	if err != nil {
+		ps.logger.Error("Failed to send webhook", 
+			zap.Error(err),
+			zap.String("endpoint", endpoint),
+			zap.String("transaction_id", notification.TransactionId),
+		)
 		return fmt.Errorf("failed to send postback: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		ps.logger.Warn("Webhook endpoint returned non-success status",
+			zap.Int("status", resp.StatusCode),
+			zap.String("endpoint", endpoint),
+			zap.String("transaction_id", notification.TransactionId),
+		)
 		return fmt.Errorf("postback endpoint returned non-success status: %d", resp.StatusCode)
 	}
+
+	ps.logger.Info("Webhook sent successfully",
+		zap.String("endpoint", endpoint),
+		zap.String("transaction_id", notification.TransactionId),
+		zap.Int("status_code", resp.StatusCode),
+	)
 
 	return nil
 }

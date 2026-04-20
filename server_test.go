@@ -599,4 +599,151 @@ func TestWriteJSONResponse_Valid(t *testing.T) {
 	}
 }
 
+func TestServer_ResetPost(t *testing.T) {
+	server, _ := NewServer(WithSharedSecret("test-secret"))
+
+	// Create some test data first
+	server.invoices["inv-1"] = &InvoiceResponse{Id: new("1")}
+	server.payments["pay-1"] = &Payment{Id: new("1")}
+	server.nextIDs.invoice = 10
+	server.nextIDs.payment = 20
+
+	// Verify data exists
+	if len(server.invoices) != 1 {
+		t.Errorf("Expected 1 invoice before reset")
+	}
+	if len(server.payments) != 1 {
+		t.Errorf("Expected 1 payment before reset")
+	}
+	if server.nextIDs.invoice != 10 {
+		t.Errorf("Expected invoice ID 10 before reset")
+	}
+	if server.nextIDs.payment != 20 {
+		t.Errorf("Expected payment ID 20 before reset")
+	}
+
+	// Call reset endpoint
+	req := httptest.NewRequest("POST", "/Reset", nil)
+	w := httptest.NewRecorder()
+	server.ResetPost(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("ResetPost() should return 200 status")
+	}
+
+	// Verify all state is cleared
+	if len(server.invoices) != 0 {
+		t.Errorf("ResetPost() should clear all invoices")
+	}
+	if len(server.payments) != 0 {
+		t.Errorf("ResetPost() should clear all payments")
+	}
+	if server.nextIDs.invoice != 0 {
+		t.Errorf("ResetPost() should reset invoice ID counter to 0")
+	}
+	if server.nextIDs.payment != 0 {
+		t.Errorf("ResetPost() should reset payment ID counter to 0")
+	}
+}
+
+func TestServer_ResetPost_AfterCreateOperations(t *testing.T) {
+	server, _ := NewServer(WithSharedSecret("test-secret"))
+
+	// Create invoice
+	merchantId := "test-merchant"
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId: merchantId,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var createResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&createResp)
+	firstInvoiceID := *createResp.Id
+
+	// Create payment
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "BTC",
+		BlockchainCode: bcCode,
+		InvoiceId:      firstInvoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	// Call reset
+	req3 := httptest.NewRequest("POST", "/Reset", nil)
+	w3 := httptest.NewRecorder()
+	server.ResetPost(w3, req3)
+
+	if w3.Code != http.StatusOK {
+		t.Errorf("ResetPost() should return 200 status")
+	}
+
+	// Create new invoice after reset - should start from inv-1 if counters were reset
+	createInvoiceReq2 := InvoiceCreatePostRequest{
+		MerchantId: merchantId,
+	}
+	reqBody4, _ := json.Marshal(createInvoiceReq2)
+	req4 := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody4))
+	w4 := httptest.NewRecorder()
+	server.InvoiceCreatePost(w4, req4)
+
+	var createResp4 InvoiceResponse
+	json.NewDecoder(w4.Body).Decode(&createResp4)
+	newInvoiceID := *createResp4.Id
+
+	// After reset, nextIDs should be 0, so new invoice should be inv-1
+	// (but we can't verify this by ID alone since inv-1 gets reused)
+
+	// Verify that after reset, only the newly created invoice exists
+	// by checking the count
+	if len(server.invoices) != 1 {
+		t.Errorf("After reset and creating 1 invoice, should have exactly 1 invoice in storage, got %d", len(server.invoices))
+	}
+	if len(server.payments) != 0 {
+		t.Errorf("After reset, payments map should be empty, got %d items", len(server.payments))
+	}
+
+	// Verify the only invoice is the new one, not the old one
+	newInvoice, err := server.GetInvoice(newInvoiceID)
+	if err != nil {
+		t.Errorf("Should be able to retrieve new invoice after reset")
+	}
+	if newInvoice == nil {
+		t.Errorf("New invoice should exist")
+	}
+
+	// Verify counters were reset (nextID was 0 before new creation, now should be 1)
+	if server.nextIDs.invoice != 1 {
+		t.Errorf("After reset and 1 creation, invoice counter should be 1, got %d", server.nextIDs.invoice)
+	}
+}
+
+func TestServer_Handler_RegistersResetEndpoint(t *testing.T) {
+	server, _ := NewServer(WithSharedSecret("test-secret"))
+	handler := server.Handler()
+
+	// Create some test data
+	server.invoices["test"] = &InvoiceResponse{Id: new("test")}
+
+	// Call /Reset through handler
+	req := httptest.NewRequest("POST", "/Reset", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Handler should route /Reset to ResetPost")
+	}
+
+	// Verify state was cleared
+	if len(server.invoices) != 0 {
+		t.Errorf("Handler's /Reset endpoint should clear state")
+	}
+}
 

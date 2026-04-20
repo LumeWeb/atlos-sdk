@@ -414,6 +414,22 @@ func (s *Server) PostbackURL() string {
 	return s.config.postbackURL
 }
 
+// ResetPost handles /Reset requests for clearing all mock server state.
+// This endpoint clears all invoices, payments, and resets nextID counters.
+// Useful for resetting the mock server between test scenarios without restarting.
+func (s *Server) ResetPost(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Clear all state
+	s.invoices = make(map[string]*InvoiceResponse)
+	s.payments = make(map[string]*Payment)
+	s.nextIDs.invoice = 0
+	s.nextIDs.payment = 0
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // Handler creates an http.Handler that can be used with http.ListenAndServe.
 // It registers all the Server endpoints using the internal client server generation.
 func (s *Server) Handler() http.Handler {
@@ -422,6 +438,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Register custom test endpoint for payment completion
 	mux.HandleFunc("/Payment/Complete", s.CompletePaymentPost)
+	// Register custom test endpoint for resetting server state
+	mux.HandleFunc("/Reset", s.ResetPost)
 
 	return handler
 }

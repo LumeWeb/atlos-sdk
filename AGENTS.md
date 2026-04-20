@@ -32,7 +32,7 @@ atlos-sdk/
 
 2. **SDK Layer** (`client.go`): Public API wrapping the generated client. Handles API secret authentication, URL normalization, and provides high-level wrapper methods for all API endpoints (`CreatePayment`, `PaymentGet`, `AssetList`, etc.). These methods hide internal generated client details and handle response parsing automatically. **Type Re-exports:** All generated types from `internal/client` are re-exported at the package level (e.g., `Asset`, `Payment`, `CreatePaymentPostRequest`), allowing users to import only the `atlos` package without needing to reference the internal package.
 
-3. **Mock Server** (`server.go`): Implements the generated `ServerInterface` for testing. Provides in-memory storage for invoices/payments with mutex-protected concurrent access. Includes `PostbackSender` for webhook notifications with configurable modes (disabled/immediate/manual).
+3. **Mock Server** (`server.go`): Implements the generated `ServerInterface` for testing. Provides in-memory storage for invoices/payments with mutex-protected concurrent access. Includes `PostbackSender` for webhook notifications with configurable modes (disabled/immediate/manual). Non-standard `/Reset` endpoint clears all mock state (invoices, payments, and nextID counters) for test isolation.
 
 4. **Postback Handling** (`postback.go`): Webhook notification verification using HMAC-SHA256 signatures. Provides `PostbackSender` for sending notifications and `PostbackHandler` for receiving/verifying inbound postbacks.
 
@@ -129,5 +129,6 @@ Typical test flow:
 1. Create payment via `CreatePaymentPost` → returns payment ID and wallet address
 2. Simulate blockchain confirmation via `CompletePaymentPost` → updates status to "success" and generates transaction hash
 3. Verify payment via `PaymentGetPost` → confirms final status
+4. Reset mock state via `ResetPost` (POST to `/Reset`) → clears all invoices, payments, and resets ID counters
 
 Payments are stored in-memory and reset on server restart. Use `GetInvoice()` and `GetPayment()` for direct data access in tests.

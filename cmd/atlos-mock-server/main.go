@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/atlos-sdk"
+	"go.uber.org/zap"
 )
 
 var version = "dev"
@@ -59,10 +60,17 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("invalid postback mode: %w", err)
 	}
 
+	logger, err := zap.NewProduction()
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+	defer logger.Sync()
+
 	server, err := atlos.NewServer(
 		atlos.WithPostbackURL(postbackURL),
 		atlos.WithSharedSecret(sharedSecret),
 		atlos.WithPostbackMode(postbackMode),
+		atlos.WithLogger(logger),
 	)
 	if err != nil {
 		return err

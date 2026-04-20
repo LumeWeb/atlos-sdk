@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewServer_ValidOptions(t *testing.T) {
@@ -561,7 +562,195 @@ func TestServer_CompletePayment_NotFound(t *testing.T) {
 	}
 }
 
+func TestServer_CompletePayment_PopulatesPostbackFromInvoice(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
 
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	// Create invoice with all the invoice-specific fields
+	merchantId := "test-merchant"
+	orderId := "order-123"
+	orderAmount := float32(99.99)
+	orderCurrency := "USD"
+	userName := "John Doe"
+	userEmail := "john@example.com"
+
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId:    merchantId,
+		OrderId:       &orderId,
+		OrderAmount:   orderAmount,
+		OrderCurrency: &orderCurrency,
+		UserName:      &userName,
+		UserEmail:     &userEmail,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var invoiceResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&invoiceResp)
+	invoiceID := *invoiceResp.Id
+
+	// Create payment linked to the invoice
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "BTC",
+		BlockchainCode: bcCode,
+		InvoiceId:      invoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	var createResp Payment
+	json.NewDecoder(w2.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	// Complete payment - this should trigger postback with invoice data
+	err := server.CompletePayment(paymentID)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	// Wait for postback with timeout
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	// Verify all invoice fields are populated in the postback
+	if notification.OrderId != orderId {
+		t.Errorf("Postback OrderId = %q, want %q", notification.OrderId, orderId)
+	}
+	if notification.OrderAmount != float64(orderAmount) {
+		t.Errorf("Postback OrderAmount = %f, want %f", notification.OrderAmount, orderAmount)
+	}
+	if notification.OrderCurrency != orderCurrency {
+		t.Errorf("Postback OrderCurrency = %q, want %q", notification.OrderCurrency, orderCurrency)
+	}
+	if notification.PaidAmount != float64(orderAmount) {
+		t.Errorf("Postback PaidAmount = %f, want %f", notification.PaidAmount, orderAmount)
+	}
+	if notification.UserName != userName {
+		t.Errorf("Postback UserName = %q, want %q", notification.UserName, userName)
+	}
+	if notification.UserEmail != userEmail {
+		t.Errorf("Postback UserEmail = %q, want %q", notification.UserEmail, userEmail)
+	}
+	if notification.MerchantId != merchantId {
+		t.Errorf("Postback MerchantId = %q, want %q", notification.MerchantId, merchantId)
+	}
+	if notification.Asset != "BTC" {
+		t.Errorf("Postback Asset = %q, want %q", notification.Asset, "BTC")
+	}
+	if notification.TransactionId != paymentID {
+		t.Errorf("Postback TransactionId = %q, want %q", notification.TransactionId, paymentID)
+	}
+	if notification.Status != 100 {
+		t.Errorf("Postback Status = %d, want %d", notification.Status, 100)
+	}
+	if notification.BlockchainHash == "" {
+		t.Errorf("Postback BlockchainHash should be set")
+	}
+}
+
+func TestServer_CompletePayment_StandalonePayment_NoInvoiceData(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
+
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	// Create a standalone payment (no invoice ID)
+	// Using empty or invalid invoice ID
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "ETH",
+		BlockchainCode: bcCode,
+		InvoiceId:      "", // No invoice ID
+		IsEvm:          "1",
+	}
+	reqBody, _ := json.Marshal(createPaymentReq)
+	req := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.CreatePaymentPost(w, req)
+
+	var createResp Payment
+	json.NewDecoder(w.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	// Complete payment - this should trigger postback without invoice data
+	err := server.CompletePayment(paymentID)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	// Wait for postback with timeout
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	// Verify payment data is populated
+	if notification.TransactionId != paymentID {
+		t.Errorf("Postback TransactionId = %q, want %q", notification.TransactionId, paymentID)
+	}
+	if notification.Asset != "ETH" {
+		t.Errorf("Postback Asset = %q, want %q", notification.Asset, "ETH")
+	}
+	if notification.Status != 100 {
+		t.Errorf("Postback Status = %d, want %d", notification.Status, 100)
+	}
+	if notification.BlockchainHash == "" {
+		t.Errorf("Postback BlockchainHash should be set")
+	}
+
+	// Invoice-specific fields should be empty/zero
+	if notification.OrderId != "" {
+		t.Errorf("Postback OrderId should be empty for standalone payment, got %q", notification.OrderId)
+	}
+	if notification.OrderAmount != 0 {
+		t.Errorf("Postback OrderAmount should be 0 for standalone payment, got %f", notification.OrderAmount)
+	}
+	if notification.OrderCurrency != "" {
+		t.Errorf("Postback OrderCurrency should be empty for standalone payment, got %q", notification.OrderCurrency)
+	}
+	if notification.UserName != "" {
+		t.Errorf("Postback UserName should be empty for standalone payment, got %q", notification.UserName)
+	}
+	if notification.UserEmail != "" {
+		t.Errorf("Postback UserEmail should be empty for standalone payment, got %q", notification.UserEmail)
+	}
+}
 
 func TestGenerateHexString_FixedLength(t *testing.T) {
 	length := 40
@@ -603,7 +792,10 @@ func TestServer_ResetPost(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
 
 	// Create some test data first
-	server.invoices["inv-1"] = &InvoiceResponse{Id: new("1")}
+	server.invoices["inv-1"] = &invoiceData{
+		response: &InvoiceResponse{Id: new("1")},
+		request:  InvoiceCreatePostRequest{},
+	}
 	server.payments["pay-1"] = &Payment{Id: new("1")}
 	server.nextIDs.invoice = 10
 	server.nextIDs.payment = 20
@@ -730,7 +922,10 @@ func TestServer_Handler_RegistersResetEndpoint(t *testing.T) {
 	handler := server.Handler()
 
 	// Create some test data
-	server.invoices["test"] = &InvoiceResponse{Id: new("test")}
+	server.invoices["test"] = &invoiceData{
+		response: &InvoiceResponse{Id: new("test")},
+		request:  InvoiceCreatePostRequest{},
+	}
 
 	// Call /Reset through handler
 	req := httptest.NewRequest("POST", "/Reset", nil)

@@ -20,6 +20,13 @@ var (
 	defaultFeeStr = "020000000"
 )
 
+// invoiceData stores the full invoice request alongside the response,
+// so that postback notifications can include OrderId, amounts, and user info.
+type invoiceData struct {
+	response *InvoiceResponse
+	request  InvoiceCreatePostRequest
+}
+
 // Server represents a lightweight server implementation that extends the internal ServerInterface.
 // It implements all methods defined in client.ServerInterface and provides postback notification capability.
 // Use client.Handler() or client.HandlerFromMux() to create an HTTP handler from this server.
@@ -30,8 +37,10 @@ type Server struct {
 
 	// Test data storage
 	mu         sync.RWMutex
-	invoices   map[string]*InvoiceResponse
+	invoices   map[string]*invoiceData
 	payments   map[string]*Payment
+	// paymentToInvoice maps payment ID → invoice ID so postbacks can look up invoice data
+	paymentToInvoice map[string]string
 	nextIDs    struct {
 		invoice  int
 		payment  int
@@ -130,11 +139,12 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 	sender := NewPostbackSenderWithLogger(cfg.apiSecret, cfg.logger)
 
 	return &Server{
-		config:   cfg,
-		sender:   sender,
-		logger:   cfg.logger,
-		invoices: make(map[string]*InvoiceResponse),
-		payments: make(map[string]*Payment),
+		config:           cfg,
+		sender:           sender,
+		logger:           cfg.logger,
+		invoices:         make(map[string]*invoiceData),
+		payments:         make(map[string]*Payment),
+		paymentToInvoice: make(map[string]string),
 	}, nil
 }
 
@@ -166,7 +176,10 @@ func (s *Server) InvoiceCreatePost(w http.ResponseWriter, r *http.Request) {
 		Id:          &invoiceID,
 		PaymentLink: func() *string { s := fmt.Sprintf("https://atlos.com/payment/%s", invoiceID); return &s }(),
 	}
-	s.invoices[invoiceID] = invoice
+	s.invoices[invoiceID] = &invoiceData{
+		response: invoice,
+		request:  req,
+	}
 
 	response := *invoice
 	writeJSONResponse(w, response)
@@ -198,6 +211,7 @@ func (s *Server) CreatePaymentPost(w http.ResponseWriter, r *http.Request) {
 		Status:           &pendingStatus,
 	}
 	s.payments[paymentID] = payment
+	s.paymentToInvoice[paymentID] = req.InvoiceId
 
 	response := *payment
 	writeJSONResponse(w, response)
@@ -349,6 +363,54 @@ func (s *Server) CompletePaymentPost(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, response)
 }
 
+// buildPostbackNotification creates a postback notification for a completed payment.
+// If the payment is linked to an invoice, the notification includes invoice data (OrderId, etc.)
+// and uses WithDefaults(). For standalone payments, invoice fields are left empty.
+func (s *Server) buildPostbackNotification(paymentID, txID string, payment *Payment) *PostbackNotification {
+	// Check if payment is linked to an invoice
+	invoiceID, hasInvoice := s.paymentToInvoice[paymentID]
+	hasInvoice = hasInvoice && invoiceID != ""
+
+	// Only apply defaults if we have a linked invoice
+	var opts []PostbackOption
+	if hasInvoice {
+		opts = append(opts, WithDefaults())
+	}
+	notification := CreateTestPostback("test-merchant", opts...)
+
+	// Populate from payment data
+	notification.TransactionId = paymentID
+	notification.BlockchainHash = txID
+	notification.Status = 100
+	if payment.AssetCode != nil {
+		notification.Asset = *payment.AssetCode
+	}
+
+	// Populate from linked invoice data if available
+	if hasInvoice {
+		if invData, ok := s.invoices[invoiceID]; ok {
+			req := invData.request
+			if req.OrderId != nil {
+				notification.OrderId = *req.OrderId
+			}
+			notification.OrderAmount = float64(req.OrderAmount)
+			if req.OrderCurrency != nil {
+				notification.OrderCurrency = *req.OrderCurrency
+			}
+			notification.PaidAmount = float64(req.OrderAmount)
+			if req.UserName != nil {
+				notification.UserName = *req.UserName
+			}
+			if req.UserEmail != nil {
+				notification.UserEmail = *req.UserEmail
+			}
+			notification.MerchantId = req.MerchantId
+		}
+	}
+
+	return notification
+}
+
 // completePaymentInternal handles the internal logic for completing a payment.
 func (s *Server) completePaymentInternal(paymentID string) error {
 	s.mu.Lock()
@@ -364,10 +426,7 @@ func (s *Server) completePaymentInternal(paymentID string) error {
 	payment.Txid = &txID
 
 	if s.config.postbackMode == PostbackImmediate && s.config.postbackURL != "" && s.sender != nil {
-		notification := CreateTestPostback("test-merchant")
-		notification.TransactionId = paymentID
-		notification.BlockchainHash = txID
-		notification.Status = 100
+		notification := s.buildPostbackNotification(paymentID, txID, payment)
 
 		go func() {
 			_ = s.sender.Send(s.config.postbackURL, notification)
@@ -397,11 +456,11 @@ func (s *Server) GetInvoice(invoiceID string) (*InvoiceResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	invoice, exists := s.invoices[invoiceID]
+	invData, exists := s.invoices[invoiceID]
 	if !exists {
 		return nil, fmt.Errorf("invoice not found: %s", invoiceID)
 	}
-	return invoice, nil
+	return invData.response, nil
 }
 
 // GetPayment retrieves a stored payment by ID.
@@ -437,8 +496,9 @@ func (s *Server) ResetPost(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	// Clear all state
-	s.invoices = make(map[string]*InvoiceResponse)
+	s.invoices = make(map[string]*invoiceData)
 	s.payments = make(map[string]*Payment)
+	s.paymentToInvoice = make(map[string]string)
 	s.nextIDs.invoice = 0
 	s.nextIDs.payment = 0
 

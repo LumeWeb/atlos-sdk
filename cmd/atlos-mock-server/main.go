@@ -78,6 +78,7 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println("  POST /Payment/Create    - Create payment")
 	fmt.Println("  POST /Payment/Get       - Get payment status")
 	fmt.Println("  POST /Payment/Complete  - Simulate blockchain confirmation")
+	fmt.Println("  POST /Reset             - Clear all mock server state")
 	fmt.Println()
 	fmt.Println("To simulate payment completion:")
 	fmt.Println(`  curl -X POST http://localhost:8080/Payment/Complete -d '{"PaymentId":"pay-1"}'`)

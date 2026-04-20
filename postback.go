@@ -282,26 +282,54 @@ func (ms *MockServer) SendPostback(notification *PostbackNotification) error {
 	return ms.sender.Send(ms.config.PostbackURL, notification)
 }
 
+// PostbackOption configures a PostbackNotification.
+type PostbackOption func(*PostbackNotification)
+
+// WithDefaults returns an option that applies a set of default values including invoice fields.
+// This is useful for backward compatibility with existing tests that expect full defaults.
+func WithDefaults() PostbackOption {
+	return func(pn *PostbackNotification) {
+		if pn.OrderId == "" {
+			pn.OrderId = "test-order-123"
+		}
+		if pn.UserName == "" {
+			pn.UserName = "Test User"
+		}
+		if pn.UserEmail == "" {
+			pn.UserEmail = "test@example.com"
+		}
+		if pn.OrderAmount == 0 {
+			pn.OrderAmount = 19.95
+		}
+		if pn.OrderCurrency == "" {
+			pn.OrderCurrency = "USD"
+		}
+		if pn.PaidAmount == 0 {
+			pn.PaidAmount = 20.00
+		}
+	}
+}
+
 // CreateTestPostback creates a test postback notification with default values.
-func CreateTestPostback(merchantId string) *PostbackNotification {
+// Use WithDefaults() to include default invoice fields (OrderId, UserName, UserEmail, etc.)
+// for backward compatibility with existing tests.
+func CreateTestPostback(merchantId string, opts ...PostbackOption) *PostbackNotification {
 	now := time.Now().UTC().Format(time.RFC3339)
-	return &PostbackNotification{
+	pn := &PostbackNotification{
 		TransactionId:  "test-tx-id",
 		SubscriptionId: "",
 		MerchantId:     merchantId,
-		OrderId:        "test-order-123",
 		Amount:         20.00,
 		Fee:            0.20,
 		Blockchain:     "ETH",
 		Asset:          "USDC",
 		BlockchainHash: "0x" + "0000000000000000000000000000000000000000000000000000000000000000",
 		UserWallet:     "0x22d491Bde2303f2f43325b2108D26f1eAbA1e32b",
-		UserName:       "Test User",
-		UserEmail:      "test@example.com",
-		OrderAmount:    19.95,
-		OrderCurrency:  "USD",
-		PaidAmount:     20.00,
 		TimeSent:       now,
 		Status:         100,
 	}
+	for _, opt := range opts {
+		opt(pn)
+	}
+	return pn
 }

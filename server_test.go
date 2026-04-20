@@ -792,13 +792,11 @@ func TestServer_ResetPost(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
 
 	// Create some test data first
-	server.invoices["inv-1"] = &invoiceData{
+	server.invoices["test-id-1"] = &invoiceData{
 		response: &InvoiceResponse{Id: new("1")},
 		request:  InvoiceCreatePostRequest{},
 	}
-	server.payments["pay-1"] = &Payment{Id: new("1")}
-	server.nextIDs.invoice = 10
-	server.nextIDs.payment = 20
+	server.payments["test-id-2"] = &Payment{Id: new("1")}
 
 	// Verify data exists
 	if len(server.invoices) != 1 {
@@ -806,12 +804,6 @@ func TestServer_ResetPost(t *testing.T) {
 	}
 	if len(server.payments) != 1 {
 		t.Errorf("Expected 1 payment before reset")
-	}
-	if server.nextIDs.invoice != 10 {
-		t.Errorf("Expected invoice ID 10 before reset")
-	}
-	if server.nextIDs.payment != 20 {
-		t.Errorf("Expected payment ID 20 before reset")
 	}
 
 	// Call reset endpoint
@@ -830,13 +822,8 @@ func TestServer_ResetPost(t *testing.T) {
 	if len(server.payments) != 0 {
 		t.Errorf("ResetPost() should clear all payments")
 	}
-	if server.nextIDs.invoice != 0 {
-		t.Errorf("ResetPost() should reset invoice ID counter to 0")
-	}
-	if server.nextIDs.payment != 0 {
-		t.Errorf("ResetPost() should reset payment ID counter to 0")
-	}
 }
+
 
 func TestServer_ResetPost_AfterCreateOperations(t *testing.T) {
 	server, _ := NewServer(WithSharedSecret("test-secret"))
@@ -890,9 +877,6 @@ func TestServer_ResetPost_AfterCreateOperations(t *testing.T) {
 	json.NewDecoder(w4.Body).Decode(&createResp4)
 	newInvoiceID := *createResp4.Id
 
-	// After reset, nextIDs should be 0, so new invoice should be inv-1
-	// (but we can't verify this by ID alone since inv-1 gets reused)
-
 	// Verify that after reset, only the newly created invoice exists
 	// by checking the count
 	if len(server.invoices) != 1 {
@@ -909,11 +893,6 @@ func TestServer_ResetPost_AfterCreateOperations(t *testing.T) {
 	}
 	if newInvoice == nil {
 		t.Errorf("New invoice should exist")
-	}
-
-	// Verify counters were reset (nextID was 0 before new creation, now should be 1)
-	if server.nextIDs.invoice != 1 {
-		t.Errorf("After reset and 1 creation, invoice counter should be 1, got %d", server.nextIDs.invoice)
 	}
 }
 

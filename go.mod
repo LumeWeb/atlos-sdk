@@ -1,4 +1,4 @@
-module go.lumeweb.com/atlos-sdk // v0.1.0
+module go.lumeweb.com/atlos-sdk // v0.1.1
 
 go 1.26
 

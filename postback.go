@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -83,18 +84,30 @@ func (p *PostbackNotification) Validate() error {
 	return nil
 }
 
-// VerifySignature verifies the HMAC-SHA256 signature of the postback notification.
+// VerifySignatureFromBytes verifies the HMAC-SHA256 signature of raw postback data.
+// This is the preferred method for verifying inbound postbacks, as it checks the
+// signature against the original raw request body without re-marshaling, matching
+// the Atlos API's signing behavior.
+func VerifySignatureFromBytes(apiSecret, signature string, data []byte) bool {
+	h := hmac.New(sha256.New, []byte(apiSecret))
+	h.Write(data)
+	expectedSignature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+// VerifySignature verifies the HMAC-SHA256 signature of the postback notification
+// by re-marshaling the struct to JSON. This is suitable when both the notification
+// struct and signature are produced locally (e.g., in PostbackSender), but should
+// NOT be used for verifying inbound postbacks — use VerifySignatureFromBytes with
+// the raw request body instead, as re-marshaled JSON may differ from the original.
 func (p *PostbackNotification) VerifySignature(apiSecret, signature string) (bool, error) {
 	data, err := json.Marshal(p)
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
-	h := hmac.New(sha256.New, []byte(apiSecret))
-	h.Write(data)
-	expectedSignature := base64.StdEncoding.EncodeToString(h.Sum(nil))
-
-	return hmac.Equal([]byte(signature), []byte(expectedSignature)), nil
+	return VerifySignatureFromBytes(apiSecret, signature, data), nil
 }
 
 // PostbackSender handles sending postback notifications to an endpoint.
@@ -208,6 +221,8 @@ func (ps *PostbackSender) Send(endpoint string, notification *PostbackNotificati
 	return nil
 }
 
+const maxPostbackBodySize = 1 << 20 // 1 MB
+
 // PostbackHandler receives postback notifications and verifies them.
 type PostbackHandler struct {
 	apiSecret string
@@ -220,29 +235,30 @@ func NewPostbackHandler(apiSecret string) *PostbackHandler {
 	}
 }
 
-// HandleRequest handles an incoming postback request and verifies the signature.
+// HandleRequest handles an incoming postback request and verifies the signature
+// against the raw request body, as required by the Atlos API documentation.
 func (ph *PostbackHandler) HandleRequest(req *http.Request) (*PostbackNotification, error) {
 	signature := req.Header.Get(SignatureHeader)
 	if signature == "" {
 		return nil, fmt.Errorf("missing %s header", SignatureHeader)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxPostbackBodySize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read request body: %w", err)
+	}
+
+	if !VerifySignatureFromBytes(ph.apiSecret, signature, body) {
+		return nil, fmt.Errorf("invalid signature")
+	}
+
 	var notification PostbackNotification
-	if err := json.NewDecoder(req.Body).Decode(&notification); err != nil {
+	if err := json.Unmarshal(body, &notification); err != nil {
 		return nil, fmt.Errorf("failed to decode notification: %w", err)
 	}
 
 	if err := notification.Validate(); err != nil {
 		return nil, fmt.Errorf("notification validation failed: %w", err)
-	}
-
-	valid, err := notification.VerifySignature(ph.apiSecret, signature)
-	if err != nil {
-		return nil, fmt.Errorf("signature verification failed: %w", err)
-	}
-
-	if !valid {
-		return nil, fmt.Errorf("invalid signature")
 	}
 
 	return &notification, nil

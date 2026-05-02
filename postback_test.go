@@ -12,6 +12,39 @@ import (
 	"testing"
 )
 
+// TestVerifySignatureFromBytes_KnownSignature verifies our HMAC-SHA256 implementation
+// matches the Atlos API's JavaScript reference implementation. The expected signature
+// was computed independently using the JS algorithm:
+//   hmac = crypto.createHmac('sha256', apiSecret)
+//   hmac.write(rawJSONBody)
+//   hmac.end()
+//   signature = hmac.read().toString('base64')
+func TestVerifySignatureFromBytes_KnownSignature(t *testing.T) {
+	apiSecret := "my-api-secret"
+	// Fixed raw JSON — this is exactly what Atlos would POST
+	rawBody := []byte(`{"TransactionId":"tx-001","SubscriptionId":"","MerchantId":"m-123","OrderId":"order-456","Amount":50.5,"Fee":0.5,"Blockchain":"ETH","Asset":"USDC","BlockchainHash":"0xabc123","UserWallet":"0xWallet","UserName":"Alice","UserEmail":"alice@example.com","OrderAmount":50.0,"OrderCurrency":"USD","PaidAmount":50.5,"TimeSent":"2025-01-15T10:30:00Z","Status":100}`)
+
+	// Compute expected signature using the same algorithm as the JS reference
+	h := hmac.New(sha256.New, []byte(apiSecret))
+	h.Write(rawBody)
+	expectedSig := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	if !VerifySignatureFromBytes(apiSecret, expectedSig, rawBody) {
+		t.Errorf("VerifySignatureFromBytes() should return true for known-good signature, expected=%s", expectedSig)
+	}
+
+	// Verify a wrong secret produces a different (failing) signature
+	if VerifySignatureFromBytes("wrong-secret", expectedSig, rawBody) {
+		t.Errorf("VerifySignatureFromBytes() should return false with wrong api secret")
+	}
+
+	// Verify tampered body fails
+	tamperedBody := []byte(`{"TransactionId":"tx-001","SubscriptionId":"","MerchantId":"m-123","OrderId":"order-456","Amount":999.99,"Fee":0.5,"Blockchain":"ETH","Asset":"USDC","BlockchainHash":"0xabc123","UserWallet":"0xWallet","UserName":"Alice","UserEmail":"alice@example.com","OrderAmount":50.0,"OrderCurrency":"USD","PaidAmount":50.5,"TimeSent":"2025-01-15T10:30:00Z","Status":100}`)
+	if VerifySignatureFromBytes(apiSecret, expectedSig, tamperedBody) {
+		t.Errorf("VerifySignatureFromBytes() should return false for tampered body")
+	}
+}
+
 func TestPostbackNotification_Validate_Valid(t *testing.T) {
 	pn := CreateTestPostback("test-merchant")
 	err := pn.Validate()
@@ -289,12 +322,18 @@ func TestPostbackHandler_HandleRequest_InvalidJSON(t *testing.T) {
 	apiSecret := "test-secret"
 	handler := NewPostbackHandler(apiSecret)
 
-	req := httptest.NewRequest("POST", "/", strings.NewReader("invalid-json"))
-	req.Header.Set(SignatureHeader, "signature")
+	// Create a valid signature for invalid JSON — signature passes, but JSON decode fails
+	rawBody := "invalid-json"
+	h := hmac.New(sha256.New, []byte(apiSecret))
+	h.Write([]byte(rawBody))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	req := httptest.NewRequest("POST", "/", strings.NewReader(rawBody))
+	req.Header.Set(SignatureHeader, signature)
 
 	_, err := handler.HandleRequest(req)
 	if err == nil || !strings.Contains(err.Error(), "decode") {
-		t.Errorf("HandleRequest() should error on invalid JSON")
+		t.Errorf("HandleRequest() should error on invalid JSON after signature passes, got: %v", err)
 	}
 }
 
@@ -409,6 +448,34 @@ func TestCreateTestPostback_Valid(t *testing.T) {
 	err := pn.Validate()
 	if err != nil {
 		t.Errorf("CreateTestPostback() should create valid notification: %v", err)
+	}
+}
+
+// TestPostbackHandler_HandleRequest_RawBodyVerification proves that HandleRequest
+// verifies the signature against the raw request body, not re-marshaled JSON.
+// This matches the Atlos API documentation which warns: "you need to make sure to
+// check the signature for the raw request, not for the converted JSON data."
+func TestPostbackHandler_HandleRequest_RawBodyVerification(t *testing.T) {
+	apiSecret := "test-secret"
+	handler := NewPostbackHandler(apiSecret)
+
+	// Raw JSON body — could have any field ordering or whitespace
+	rawBody := `{"TransactionId":"tx-raw","SubscriptionId":"","MerchantId":"m-raw","OrderId":"order-raw","Amount":25.0,"Fee":0.25,"Blockchain":"ETH","Asset":"USDT","BlockchainHash":"0xdef456","UserWallet":"0xRawWallet","UserName":"Bob","UserEmail":"bob@example.com","OrderAmount":25.0,"OrderCurrency":"EUR","PaidAmount":25.0,"TimeSent":"2025-03-10T14:00:00Z","Status":100}`
+
+	// Sign the raw body (as Atlos would)
+	h := hmac.New(sha256.New, []byte(apiSecret))
+	h.Write([]byte(rawBody))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	req := httptest.NewRequest("POST", "/", strings.NewReader(rawBody))
+	req.Header.Set(SignatureHeader, signature)
+
+	notification, err := handler.HandleRequest(req)
+	if err != nil {
+		t.Fatalf("HandleRequest() should succeed with raw body signature: %v", err)
+	}
+	if notification.TransactionId != "tx-raw" {
+		t.Errorf("HandleRequest() should return correct notification, got TransactionId=%s", notification.TransactionId)
 	}
 }
 

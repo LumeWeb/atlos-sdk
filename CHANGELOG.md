@@ -1,3 +1,10 @@
+## 0.1.2 (2026-05-02)
+
+### Fixes
+
+- verify postback signature against raw body
+- add body size limit to HandleRequest to prevent OOM attacks
+
 ## 0.1.1 (2026-04-21)
 
 ### Features

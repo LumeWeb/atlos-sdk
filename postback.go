@@ -221,6 +221,8 @@ func (ps *PostbackSender) Send(endpoint string, notification *PostbackNotificati
 	return nil
 }
 
+const maxPostbackBodySize = 1 << 20 // 1 MB
+
 // PostbackHandler receives postback notifications and verifies them.
 type PostbackHandler struct {
 	apiSecret string
@@ -241,7 +243,7 @@ func (ph *PostbackHandler) HandleRequest(req *http.Request) (*PostbackNotificati
 		return nil, fmt.Errorf("missing %s header", SignatureHeader)
 	}
 
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxPostbackBodySize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read request body: %w", err)
 	}

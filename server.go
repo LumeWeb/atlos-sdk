@@ -24,8 +24,9 @@ var (
 // invoiceData stores the full invoice request alongside the response,
 // so that postback notifications can include OrderId, amounts, and user info.
 type invoiceData struct {
-	response *InvoiceResponse
-	request  InvoiceCreatePostRequest
+	response   *InvoiceResponse
+	request    InvoiceCreatePostRequest
+	paidAmount *float64 // Optional override for PaidAmount in postback (simulates crypto-to-fiat conversion difference)
 }
 
 // Server represents a lightweight server implementation that extends the internal ServerInterface.
@@ -326,7 +327,8 @@ func (s *Server) SendTokenPost(w http.ResponseWriter, r *http.Request) {
 
 // completePaymentRequest represents a request to manually complete a payment.
 type completePaymentRequest struct {
-	PaymentID string `json:"PaymentId"`
+	PaymentID  string   `json:"PaymentId"`
+	PaidAmount *float64 `json:"PaidAmount,omitempty"`
 }
 
 // completePaymentResponse represents the response when completing a payment.
@@ -337,7 +339,8 @@ type completePaymentResponse struct {
 
 // CompletePaymentPost handles /Payment/Complete requests for testing purposes.
 // This endpoint simulates blockchain confirmation by marking a payment as successful.
-// Request body: {"PaymentId": "pay-xxx"}
+// Request body: {"PaymentId": "pay-xxx", "PaidAmount": 95.50}
+// PaidAmount is optional and overrides the postback's PaidAmount (simulates crypto-to-fiat conversion difference).
 // Response: {"PaymentId": "pay-xxx", "Status": "success"}
 func (s *Server) CompletePaymentPost(w http.ResponseWriter, r *http.Request) {
 	var req completePaymentRequest
@@ -346,7 +349,7 @@ func (s *Server) CompletePaymentPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.completePaymentInternal(req.PaymentID); err != nil {
+	if err := s.completePaymentInternal(req.PaymentID, req.PaidAmount); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -389,10 +392,18 @@ func (s *Server) buildPostbackNotification(paymentID, txID string, payment *Paym
 				notification.OrderId = *req.OrderId
 			}
 			notification.OrderAmount = float64(req.OrderAmount)
+			notification.Amount = float64(req.OrderAmount)
 			if req.OrderCurrency != nil {
 				notification.OrderCurrency = *req.OrderCurrency
 			}
-			notification.PaidAmount = float64(req.OrderAmount)
+			if invData.paidAmount != nil {
+				notification.PaidAmount = *invData.paidAmount
+			} else {
+				notification.PaidAmount = float64(req.OrderAmount)
+			}
+			if req.Subscription != nil {
+				notification.SubscriptionId = *req.Subscription
+			}
 			if req.UserName != nil {
 				notification.UserName = *req.UserName
 			}
@@ -407,7 +418,8 @@ func (s *Server) buildPostbackNotification(paymentID, txID string, payment *Paym
 }
 
 // completePaymentInternal handles the internal logic for completing a payment.
-func (s *Server) completePaymentInternal(paymentID string) error {
+// paidAmountOverride, if provided, overrides the PaidAmount in the postback notification.
+func (s *Server) completePaymentInternal(paymentID string, paidAmountOverride *float64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -419,6 +431,15 @@ func (s *Server) completePaymentInternal(paymentID string) error {
 	txID := "0x" + generateHexString(64)
 	payment.Status = &successStatus
 	payment.Txid = &txID
+
+	// Store PaidAmount override on the invoice data before building postback
+	if paidAmountOverride != nil {
+		if invoiceID, ok := s.paymentToInvoice[paymentID]; ok && invoiceID != "" {
+			if invData, ok := s.invoices[invoiceID]; ok {
+				invData.paidAmount = paidAmountOverride
+			}
+		}
+	}
 
 	if s.config.postbackMode == PostbackImmediate && s.config.postbackURL != "" && s.sender != nil {
 		notification := s.buildPostbackNotification(paymentID, txID, payment)
@@ -442,8 +463,13 @@ func (s *Server) SendPostback(notification *PostbackNotification) error {
 
 // CompletePayment simulates completing a payment by updating its status to success
 // and optionally sending a postback notification if configured.
-func (s *Server) CompletePayment(paymentID string) error {
-	return s.completePaymentInternal(paymentID)
+// paidAmountOverride, if provided, overrides the PaidAmount in the postback notification.
+func (s *Server) CompletePayment(paymentID string, paidAmountOverride ...float64) error {
+	var override *float64
+	if len(paidAmountOverride) > 0 {
+		override = &paidAmountOverride[0]
+	}
+	return s.completePaymentInternal(paymentID, override)
 }
 
 // GetInvoice retrieves a stored invoice by ID.

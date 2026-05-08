@@ -921,3 +921,278 @@ func TestServer_Handler_RegistersResetEndpoint(t *testing.T) {
 	}
 }
 
+func TestServer_CompletePayment_PaidAmountDiffersFromOrderAmount(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
+
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	merchantId := "test-merchant"
+	orderAmount := float32(99.99)
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId:  merchantId,
+		OrderAmount: orderAmount,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var invoiceResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&invoiceResp)
+	invoiceID := *invoiceResp.Id
+
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "USDC",
+		BlockchainCode: bcCode,
+		InvoiceId:      invoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	var createResp Payment
+	json.NewDecoder(w2.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	paidAmount := 95.50
+	err := server.CompletePayment(paymentID, paidAmount)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	if notification.OrderAmount != float64(orderAmount) {
+		t.Errorf("Postback OrderAmount = %f, want %f", notification.OrderAmount, orderAmount)
+	}
+	if notification.PaidAmount != paidAmount {
+		t.Errorf("Postback PaidAmount = %f, want %f", notification.PaidAmount, paidAmount)
+	}
+	if notification.PaidAmount == notification.OrderAmount {
+		t.Errorf("PaidAmount should differ from OrderAmount when override is provided")
+	}
+}
+
+func TestServer_CompletePayment_SubscriptionIdInPostback(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
+
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	merchantId := "test-merchant"
+	subId := "sub-abc123"
+	orderAmount := float32(50.0)
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId:  merchantId,
+		OrderAmount: orderAmount,
+		Subscription: &subId,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var invoiceResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&invoiceResp)
+	invoiceID := *invoiceResp.Id
+
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "USDC",
+		BlockchainCode: bcCode,
+		InvoiceId:      invoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	var createResp Payment
+	json.NewDecoder(w2.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	err := server.CompletePayment(paymentID)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	if notification.SubscriptionId != subId {
+		t.Errorf("Postback SubscriptionId = %q, want %q", notification.SubscriptionId, subId)
+	}
+}
+
+func TestServer_CompletePayment_PaidAmountDefaultsToOrderAmount(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
+
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	merchantId := "test-merchant"
+	orderAmount := float32(50.0)
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId:  merchantId,
+		OrderAmount: orderAmount,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var invoiceResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&invoiceResp)
+	invoiceID := *invoiceResp.Id
+
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "USDC",
+		BlockchainCode: bcCode,
+		InvoiceId:      invoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	var createResp Payment
+	json.NewDecoder(w2.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	err := server.CompletePayment(paymentID)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	if notification.PaidAmount != float64(orderAmount) {
+		t.Errorf("Postback PaidAmount = %f, want %f (should default to OrderAmount)", notification.PaidAmount, orderAmount)
+	}
+	if notification.PaidAmount != notification.OrderAmount {
+		t.Errorf("PaidAmount should equal OrderAmount when no override is provided")
+	}
+}
+
+func TestServer_CompletePayment_FeeNotSubtractedFromPaidAmount(t *testing.T) {
+	receivedNotification := make(chan *PostbackNotification, 1)
+	postbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var pn PostbackNotification
+		if err := json.NewDecoder(r.Body).Decode(&pn); err == nil {
+			receivedNotification <- &pn
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer postbackServer.Close()
+
+	server, _ := NewServer(
+		WithPostbackURL(postbackServer.URL),
+		WithSharedSecret("test-secret"),
+	)
+	server.config.postbackMode = PostbackImmediate
+
+	merchantId := "test-merchant"
+	orderAmount := float32(100.0)
+	createInvoiceReq := InvoiceCreatePostRequest{
+		MerchantId:  merchantId,
+		OrderAmount: orderAmount,
+	}
+	reqBody, _ := json.Marshal(createInvoiceReq)
+	req := httptest.NewRequest("POST", "/Invoice/Create", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	server.InvoiceCreatePost(w, req)
+
+	var invoiceResp InvoiceResponse
+	json.NewDecoder(w.Body).Decode(&invoiceResp)
+	invoiceID := *invoiceResp.Id
+
+	bcCode := float32(1)
+	createPaymentReq := CreatePaymentPostRequest{
+		AssetCode:      "USDC",
+		BlockchainCode: bcCode,
+		InvoiceId:      invoiceID,
+		IsEvm:          "1",
+	}
+	reqBody2, _ := json.Marshal(createPaymentReq)
+	req2 := httptest.NewRequest("POST", "/Payment/Create", bytes.NewReader(reqBody2))
+	w2 := httptest.NewRecorder()
+	server.CreatePaymentPost(w2, req2)
+
+	var createResp Payment
+	json.NewDecoder(w2.Body).Decode(&createResp)
+	paymentID := *createResp.Id
+
+	err := server.CompletePayment(paymentID)
+	if err != nil {
+		t.Fatalf("CompletePayment() should not error: %v", err)
+	}
+
+	var notification *PostbackNotification
+	select {
+	case notification = <-receivedNotification:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Postback notification was not received")
+	}
+
+	if notification.PaidAmount != 100.0 {
+		t.Errorf("Postback PaidAmount = %f, want 100.0 (Fee should NOT reduce PaidAmount)", notification.PaidAmount)
+	}
+	if notification.Fee <= 0 {
+		t.Errorf("Postback Fee should be a positive value, got %f", notification.Fee)
+	}
+}
+

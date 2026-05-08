@@ -24,9 +24,8 @@ var (
 // invoiceData stores the full invoice request alongside the response,
 // so that postback notifications can include OrderId, amounts, and user info.
 type invoiceData struct {
-	response   *InvoiceResponse
-	request    InvoiceCreatePostRequest
-	paidAmount *float64 // Optional override for PaidAmount in postback (simulates crypto-to-fiat conversion difference)
+	response *InvoiceResponse
+	request  InvoiceCreatePostRequest
 }
 
 // Server represents a lightweight server implementation that extends the internal ServerInterface.
@@ -43,6 +42,8 @@ type Server struct {
 	payments   map[string]*Payment
 	// paymentToInvoice maps payment ID → invoice ID so postbacks can look up invoice data
 	paymentToInvoice map[string]string
+	// paymentPaidAmount stores per-payment PaidAmount overrides (simulates crypto-to-fiat conversion difference)
+	paymentPaidAmount map[string]float64
 }
 
 // PostbackMode controls when postbacks are sent during payment simulation.
@@ -137,12 +138,13 @@ func NewServer(opts ...ServerOption) (*Server, error) {
 	sender := NewPostbackSenderWithLogger(cfg.apiSecret, cfg.logger)
 
 	return &Server{
-		config:           cfg,
-		sender:           sender,
-		logger:           cfg.logger,
-		invoices:         make(map[string]*invoiceData),
-		payments:         make(map[string]*Payment),
-		paymentToInvoice: make(map[string]string),
+		config:            cfg,
+		sender:            sender,
+		logger:            cfg.logger,
+		invoices:          make(map[string]*invoiceData),
+		payments:          make(map[string]*Payment),
+		paymentToInvoice:  make(map[string]string),
+		paymentPaidAmount: make(map[string]float64),
 	}, nil
 }
 
@@ -396,8 +398,8 @@ func (s *Server) buildPostbackNotification(paymentID, txID string, payment *Paym
 			if req.OrderCurrency != nil {
 				notification.OrderCurrency = *req.OrderCurrency
 			}
-			if invData.paidAmount != nil {
-				notification.PaidAmount = *invData.paidAmount
+			if override, ok := s.paymentPaidAmount[paymentID]; ok {
+				notification.PaidAmount = override
 			} else {
 				notification.PaidAmount = float64(req.OrderAmount)
 			}
@@ -432,13 +434,9 @@ func (s *Server) completePaymentInternal(paymentID string, paidAmountOverride *f
 	payment.Status = &successStatus
 	payment.Txid = &txID
 
-	// Store PaidAmount override on the invoice data before building postback
+	// Store PaidAmount override per-payment so it doesn't leak across payments sharing the same invoice
 	if paidAmountOverride != nil {
-		if invoiceID, ok := s.paymentToInvoice[paymentID]; ok && invoiceID != "" {
-			if invData, ok := s.invoices[invoiceID]; ok {
-				invData.paidAmount = paidAmountOverride
-			}
-		}
+		s.paymentPaidAmount[paymentID] = *paidAmountOverride
 	}
 
 	if s.config.postbackMode == PostbackImmediate && s.config.postbackURL != "" && s.sender != nil {
@@ -520,6 +518,7 @@ func (s *Server) ResetPost(w http.ResponseWriter, r *http.Request) {
 	s.invoices = make(map[string]*invoiceData)
 	s.payments = make(map[string]*Payment)
 	s.paymentToInvoice = make(map[string]string)
+	s.paymentPaidAmount = make(map[string]float64)
 
 	w.WriteHeader(http.StatusOK)
 }

@@ -1,3 +1,13 @@
+## 0.1.3 (2026-05-08)
+
+### Features
+
+- improve mock postback field accuracy
+
+### Fixes
+
+- store PaidAmount override per-payment to prevent cross-payment leakage
+
 ## 0.1.2 (2026-05-02)
 
 ### Fixes
